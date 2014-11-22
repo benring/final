@@ -41,21 +41,21 @@ static	char * 		HASHTAG;
 static 	unsigned int		me;
 static  unsigned int		my_server_id;
 static  int					connected_svr[5];
-static  char				server_name[5][10];
-static	char				server_group[10];
-static	char				client_group[10];
+static  char				server_name[5][MAX_GROUP_NAME];
+static	char				server_group[MAX_GROUP_NAME];
+static	char				client_group[MAX_GROUP_NAME];
 
 static 	FILE            	*sink;
 static 	char            	dest_file[10];
 
 
-void join_group (char name[10])  {
+void join_group (char name[MAX_GROUP_NAME])  {
 	int res;
 	res = SP_join(mbox, name);
 	if(res < 0) {
 		SP_error(res);
 	}
-	printf("Joined to <%s>. \n", name);
+	printf("Joined to {%s}. \n", name);
 }
 
 void connect_spread ()  {
@@ -141,6 +141,24 @@ static void 	Send_message(char * group, char * mess)   {
 }
 
 
+int is_member (char recipients[5][MAX_GROUP_NAME], int num_recipients, char node[MAX_GROUP_NAME])  {
+		int 	found_user, i;
+		found_user = FALSE;
+		for (i=0; i<num_recipients; i++) {
+//			logdb("  Compare: <%s> vs <%s>\n", recipients[i], node);
+			if (strcmp(recipients[i], node) == 0) {
+				found_user = TRUE;
+			}
+		}
+		return found_user;
+}
+
+void handle_server_change(int join, char * who) {return;}
+void handle_client_change(int join, char * who) {return;}
+void handle_client_command() {return;}
+void handle_server_update() {return;}
+
+
 static	void	Read_message()   {
 	char		sender[MAX_GROUP_NAME];
 	char		target_groups[5][MAX_GROUP_NAME];
@@ -149,9 +167,20 @@ static	void	Read_message()   {
 	int16		mess_type;
 	int		 	endian_mismatch;
 	int		 	ret, i;
+	
+	int			group_id;
+	int			num_group_members;
+	char 		full_name[MAX_GROUP_NAME];
+	char		client[MAX_GROUP_NAME];
+	char		*name;
+	int			joined;
+	char		*status_change_msg;
+	char		cur_node[MAX_GROUP_NAME];
 
 	service_type = 0;
 
+	logdb("Waiting for a message...");
+	
 	/*  Receive Message */
 	ret = SP_receive(mbox, &service_type, sender, 100, &num_members, target_groups, 
 		&mess_type, &endian_mismatch, sizeof(mess), (char *) mess );
@@ -159,21 +188,44 @@ static	void	Read_message()   {
 		SP_error(ret);
 		exit(0);
 	}
+	logdb("Received from %s\n", sender);
 	
+	// WE CAN USE MULTIPLE HASHTAGS for a complete naming convention
+	// e.g.:  #user#client#server#ugradxx
+	name = strtok(sender, HASHTAG);
+
 	/*  Processes Message */
 	if (Is_regular_mess(service_type))	{
 		logdb("Received a regular message from <%s>. Contents are: %s\n", sender, mess);
-		logdb("   The user name is <%s>\n", strtok(sender, HASHTAG));
+		logdb("   The user name is <%s>\n", name);
+		if (strcmp(sender, server_group) == 0) {
+			// MAY WANT TO CHECK IF ITS OUR MESSAGE & DO SOMETHING DIFFERENT (OR IGNORE IT)
+			handle_server_update();
+		}
+		else {
+			handle_client_command(sender); 
+		}	
 	}
 
 	/* Process Group membership messages */
 	else if(Is_membership_mess(service_type)) {
-		logdb("Received a membership message from <%s>:\n", sender);
-		for (i=0; i<num_members; i++) {
-			logdb("  Target Group #%d: %s\n", i, strtok(target_groups[i], HASHTAG));
-//			if (connected_srv == )
+		// MAY NEED TO CONSIDER MESS_TYPE to parse mess properly
+		memcpy (client, mess + 6, 32);
+
+		joined = is_member(target_groups, num_members, client);
+		status_change_msg = (joined) ? "JOINED" : "LEFT";
+		loginfo("  User <%s> has %s Group {%s} \n", client, status_change_msg, sender);
+		
+		if (strcmp(sender, server_group) == 0) {
+			handle_server_change(joined, sender);
 		}
-		Send_message(server_group, "Welcome, servers");
+		else {
+			// IF WE USE SPread Groups for room attendee lists, we will need to 
+			// distinguish "our" client leaving us vs "any" client leaving any room
+			handle_client_change(joined, sender); 
+		}
+
+		//		Send_message(server_group, "Welcome, servers");
 //		Send_message(client_group, "Welcome, clients");
 	}
 	
