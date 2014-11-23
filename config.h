@@ -15,7 +15,7 @@
 #define FALSE 0
 #define TRUE 1
 #define NUM_SERVERS 5
-#define NAME_LEN 20
+#define NAME_LEN 32
 #define CHAT_LEN 80
 
 #define	DEBUG 1

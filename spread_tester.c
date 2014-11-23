@@ -1,6 +1,7 @@
 #include "sp.h"
 
 #include "config.h"
+#include "commo.c"
 
 #include <sys/types.h>
 #include <stdio.h>
@@ -10,28 +11,20 @@
 #include <sys/time.h>
 
 
-#define MAX_MESSAGE_SIZE 1024
+#define ALL_SERVER_GROUP "server-all"
 
 #define JOIN 0
 #define SEND 1
 #define LISTEN 2
 #define DONE 3
-#define ALL_SERVER_GROUP "server-all"
-
-#define TOO_FAR_AHEAD 	40
-
-#define END_OF_MESSAGES 0
-#define DATA 1
 
 /* Forward Declared functions */
-static	void		Read_message();
-static  void    	Send_message(char * group, char * mess);
-static  void		Bye();
+static	void		Run();
+void 				Initialize (char * server_index);
 float 				time_diff (struct timeval s, struct timeval e);
 
 /* Message handling vars */
 static	char		User[80];
-static  char    	Spread_name[80];
 static  char    	Private_group[MAX_GROUP_NAME];
 static  mailbox 	mbox;
 static  unsigned int		mess[MAX_MESSAGE_SIZE];
@@ -45,33 +38,58 @@ static  char				server_name[5][MAX_GROUP_NAME];
 static	char				server_group[MAX_GROUP_NAME];
 static	char				client_group[MAX_GROUP_NAME];
 
-static 	FILE            	*sink;
-static 	char            	dest_file[10];
+//static 	FILE            	*sink;
+//static 	char            	dest_file[10];
 
 
-void join_group (char name[MAX_GROUP_NAME])  {
-	int res;
-	res = SP_join(mbox, name);
-	if(res < 0) {
-		SP_error(res);
+
+int main (int argc, char *argv[])  {
+	int	    		ret, i;
+
+	/*  Handle Command line arguments */
+	if (argc != 2)  {
+		  printf("Usage: spread_tester  <server_index_#>\n");
+		  exit(0);
+	} 
+
+	Initialize(argv[1]);
+	
+	/* Connect to Spread */
+	connect_spread(&mbox, User, Private_group);
+	E_init();
+
+	/* Initiate Membership join  */
+	join_group(mbox, server_group);
+	join_group(mbox, client_group);
+
+	logdb("Attaching reader event handler\n");
+	E_attach_fd(mbox, READ_FD, Run, 0, NULL, HIGH_PRIORITY );
+	E_handle_events();
+	
+	disconn_spread(mbox);
+	
+	return(0);
+}
+ 
+int is_member (char recipients[5][MAX_GROUP_NAME], int num_recipients, char node[MAX_GROUP_NAME])  {
+	int 	found_user, i;
+	found_user = FALSE;
+	for (i=0; i<num_recipients; i++) {
+//			logdb("  Compare: <%s> vs <%s>\n", recipients[i], node);
+		if (strcmp(recipients[i], node) == 0) {
+			found_user = TRUE;
+		}
 	}
-	printf("Joined to {%s}. \n", name);
+	return found_user;
 }
 
-void connect_spread ()  {
-	int				ret;
-	sp_time 		test_timeout; 
-	test_timeout.sec = 5;
-	test_timeout.usec = 0;
-	ret = SP_connect_timeout( Spread_name, User, 0, 1, &mbox, Private_group, test_timeout );
-	if( ret != ACCEPT_SESSION ) {
-		SP_error( ret );
-		Bye();
-	}
-	printf("Connected name: <%s>, user is <%s>, private group <%s>\n", Spread_name, User, Private_group );
-}
+void handle_server_change(int join, char * who) {return;}
+void handle_client_change(int join, char * who) {return;}
+void handle_client_command() {return;}
+void handle_server_update() {return;}
 
-void initialize (char * server_index) {
+
+void Initialize (char * server_index) {
 	int 		i;
 	char 		index;
 	
@@ -86,96 +104,28 @@ void initialize (char * server_index) {
 	client_group[8] = index;
 	HASHTAG = "#";
 	
-//	strcpy(Spread_name, "MY_SPREAD_NAME");
-
-	
 	for (i=0; i<5; i++) {
 		strcpy(server_name[i], "server-");
 		server_name[i][7] = (char)(i + (int)'0');
 		connected_svr[i] = FALSE;
 	}
-
-}
-
-int main (int argc, char *argv[])  {
-	int	    		ret, i;
-	
-	char * 			all_servers_spread;
-	char *			message;
-
-	/* Initialization */
-	
-	/*  Handle Command line arguments */
-	if (argc != 2)  {
-		  printf("Usage: spread_tester  <server_index_#>\n");
-		  Bye();
-	} 
-
-	initialize(argv[1]);
-	
-	/* Connect to Spread */
-	connect_spread();
-	E_init();
-
-	/* Initiate Membership join  */
-	join_group(server_group);
-	join_group(client_group);
-
-	logdb("Attaching reader event handler\n");
-	E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY );
-	E_handle_events();
-	
-	Bye();
-	
-	return(0);
-}
- 
-static void 	Send_message(char * group, char * mess)   {
-	int				ret;
-	logdb("Sending to <%s>: '%s'\n", group, mess);
-	ret= SP_multicast(mbox, AGREED_MESS, group, 2, strlen(mess), mess);
-	if (ret < 0 )  {
-		SP_error(ret);
-		exit( 0 );
-	}
 }
 
 
-int is_member (char recipients[5][MAX_GROUP_NAME], int num_recipients, char node[MAX_GROUP_NAME])  {
-		int 	found_user, i;
-		found_user = FALSE;
-		for (i=0; i<num_recipients; i++) {
-//			logdb("  Compare: <%s> vs <%s>\n", recipients[i], node);
-			if (strcmp(recipients[i], node) == 0) {
-				found_user = TRUE;
-			}
-		}
-		return found_user;
-}
-
-void handle_server_change(int join, char * who) {return;}
-void handle_client_change(int join, char * who) {return;}
-void handle_client_command() {return;}
-void handle_server_update() {return;}
-
-
-static	void	Read_message()   {
+static	void	Run()   {
 	char		sender[MAX_GROUP_NAME];
 	char		target_groups[5][MAX_GROUP_NAME];
 	int		 	num_members;
 	int		 	service_type;
 	int16		mess_type;
 	int		 	endian_mismatch;
-	int		 	ret, i;
+	int		 	ret;
 	
-	int			group_id;
-	int			num_group_members;
 	char 		full_name[MAX_GROUP_NAME];
 	char		client[MAX_GROUP_NAME];
 	char		*name;
 	int			joined;
 	char		*status_change_msg;
-	char		cur_node[MAX_GROUP_NAME];
 
 	service_type = 0;
 
@@ -236,12 +186,7 @@ static	void	Read_message()   {
 
 }
 
-/*  Called upon termination */
-static  void	Bye()  {
-	printf("\nTerminating.\n");
-	SP_disconnect(mbox);
-	exit(0);
-}
+
 
 /*  OTHER HELPER function (for timing) */
 float time_diff (struct timeval s, struct timeval e)  {

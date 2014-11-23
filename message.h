@@ -21,8 +21,8 @@
 /*  Actions  */
 #define JOIN 10
 #define LEAVE 11
-#define LIKE 12
-#define REMOVE 13
+#define ADD_LIKE 12
+#define REM_LIKE 13
 
 /*  Basic Message Struct:  TAG & PAYLOAD  */
 typedef struct Message {
@@ -30,14 +30,14 @@ typedef struct Message {
 	char *	payload;
 } Message;
 
-typedef LTS_Vector_Message {
-	lts_entry		lts[NUM_SERVERS]
-}
+typedef struct LTS_Vector_Message {
+	lts_entry		lts[NUM_SERVERS];
+} LTS_Vector_Message;
 
 typedef struct Join_Message {
 	char	room[NAME_LEN];
 	char	user[NAME_LEN];  // ???????
-}
+} Join_Message;
 
 
 
