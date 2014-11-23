@@ -9,11 +9,11 @@ all: spread_tester chat_server chat_client ll_test
 .o:
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $<
 
-chat_server:  $(SP_LIBRARY_DIR)/libspread-core.a chat_server.o
+chat_server:  $(SP_LIBRARY_DIR)/libspread-core.a chat_server.o utils.h
 	$(LD) -o $@ chat_server.o $(SP_LIBRARY_DIR)/libspread-core.a -ldl -lm -lrt -lnsl $(SP_LIBRARY_DIR)/libspread-util.a
 
 
-chat_client:  $(SP_LIBRARY_DIR)/libspread-core.a chat_client.o
+chat_client:  $(SP_LIBRARY_DIR)/libspread-core.a chat_client.o utils.h
 	$(LD) -o $@ chat_client.o $(SP_LIBRARY_DIR)/libspread-core.a -ldl -lm -lrt -lnsl $(SP_LIBRARY_DIR)/libspread-util.a
 
 
@@ -26,5 +26,4 @@ ll_test: update_ll/update_ll.o update_ll/test_update_ll.o
 
 clean:
 	rm -f *.o 	update_ll/*.o ll_test spread_tester chat_server chat_client
->>>>>>> 7175d6bbfb3d99a4394267e14385eeacba2c29ee
 
