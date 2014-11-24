@@ -321,8 +321,8 @@ void build_likeEntry (char * u, lts_entry e, char a) {
 	
 	le = (like_entry *) &(out_update->entry);
 	strcpy(le->user, u);
-	le->chat_lts.ts = e.ts;
-	le->chat_lts.pid = e.pid;
+	le->lts.ts = e.ts;
+	le->lts.pid = e.pid;
 	le->action = a;
 }
 
