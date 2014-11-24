@@ -12,7 +12,7 @@
 
 
 #define SPREAD_DAEMON "10140@localhost"
-#define MAX_MESSAGE_SIZE 1024
+
 
 #define SERVER_ALL_GROUP_NAME "server-grp"
 #define SERVER_NAME_PREFIX "server-"
@@ -52,10 +52,10 @@ void connect_spread (mailbox * box, char user[MAX_GROUP_NAME], char private_grou
 }
 
 
-void send_message(mailbox box, char * group, char * msg)   {
+void send_message(mailbox box, char * group, char * msg, int len)   {
 	int				ret;
 	logdb("Sending to <%s>: '%s'\n", group, msg);
-	ret= SP_multicast(box, AGREED_MESS, group, 2, strlen(msg), msg);
+	ret= SP_multicast(box, AGREED_MESS, group, 2, len, msg);
 	if (ret < 0 )  {
 		SP_error(ret);
 		exit( 0 );

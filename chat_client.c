@@ -22,10 +22,13 @@
 static	char		User[USER_NAME_LIMIT];
 static  char    	Private_group[MAX_GROUP_NAME];
 static  mailbox 	mbox;
+Message				*out_msg;
+
 
 static	char		server_group[MAX_GROUP_NAME];
 static	char		my_server[MAX_GROUP_NAME];
 static	char		my_room[MAX_GROUP_NAME];
+static	char		server_inbox[MAX_GROUP_NAME];
 static 	char		last_command;
 
 static	int			state;
@@ -33,7 +36,7 @@ static	int			state;
 void Initialize();
 void Print_menu(); 
 
-void Read_message();
+void Read_message() {return;}
 
 
 void Receive_welcome_msg() {
@@ -71,7 +74,6 @@ void User_command()   {
 	char	group[MAX_GROUP_NAME];
 	char 	arg[CHAT_LEN];
 	int 	ret, i;
-	Message		*out_msg;
 
 	printf("%s>", User);
 	
@@ -94,7 +96,11 @@ void User_command()   {
 			break;
 		}
 		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
-		// SEND JOIN COMMAND TO SERVER 
+		// SEND APPEND COMMAND TO SERVER 
+		prepareAppendMsg(out_msg, my_room, User, arg);
+		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+
+		
 		break;
 
 
@@ -116,11 +122,13 @@ void User_command()   {
 		strcpy(server_group, SERVER_GROUP_PREFIX);
 		server_group[8] = arg[0];
 		join_group(mbox, server_group);
+		strcpy(server_inbox, SERVER_NAME_PREFIX);
+		server_inbox[7] = arg[0];
 		
 		/* Block until we get the Server's full private name 
 		 *   OR we could infer it from the membership list, but we 
 		 *   may want to do other stuff when the client first connects */
-		Receive_welcome_msg();
+//		Receive_welcome_msg();
 
 		state = CONN;
 		// ATTACH FD HERE
@@ -132,7 +140,9 @@ void User_command()   {
 			break;
 		}
 		logdb ("Sending history request for <%s>\n", my_room);
-		// SEND JOIN COMMAND TO SERVER 
+		prepareHistoryMsg(out_msg, my_room, User);
+		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+		
 		break;
 
 	case 'l':
@@ -147,7 +157,9 @@ void User_command()   {
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
 		logdb ("Liking Chat # <%s>\n", my_room);
-		// SEND LIKE COMMAND TO SERVER 
+		logdb ("Sending history request for <%s>\n", my_room);
+		prepareHistoryMsg(out_msg, User, LTS???, LIKE);
+		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
 	case 'r':
@@ -180,8 +192,13 @@ void User_command()   {
 			break;
 		}
 		strcpy(my_room, arg);
-		logdb ("JOIN ROOM: <%s>\n", group);
+		logdb ("JOIN ROOM: <%s>\n", my_room);
 		// SEND JOIN COMMAND TO SERVER 
+		prepareJoinMsg(out_msg, my_room, User);
+		logdb("Message contents: <%s>\n", out_msg);
+		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+		state = RUN;
+		
 		break;
 
 	case 'q':
@@ -211,7 +228,9 @@ void User_command()   {
 			break;
 		}
 		logdb("Sending view server request to server #%s\n", my_server)
-		send_message (mbox, my_server, "View");
+		
+		out_msg->tag = VIEW_MSG;
+		send_message (mbox, my_server, out_msg, 1);
 		break;
 
 	
@@ -238,15 +257,17 @@ int main (int argc, char *argv[])  {
 		  exit(0);
 	} 
 	
+	Initialize();
+	
 	/* Connect to Spread */
 	connect_spread(&mbox, User, Private_group);
 	E_init();
 
-	/* Initiate Membership join  */
-	while (TRUE) {
-		User_command();
-	}
 	
+	E_attach_fd( 0, READ_FD, User_command, 0, NULL, LOW_PRIORITY );
+	E_attach_fd( mbox, READ_FD, Read_message, 0, NULL, LOW_PRIORITY );
+	E_handle_events();
+
 	disconn_spread(mbox);
 	
 	return(0);
@@ -255,6 +276,7 @@ int main (int argc, char *argv[])  {
 
 void Initialize() {
 	state = INIT;
+	out_msg = malloc(MAX_MESSAGE_SIZE);
 }
 
 void Print_menu()  {

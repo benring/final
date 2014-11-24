@@ -17,11 +17,11 @@ void 			Initialize (char * server_index);
 float 			time_diff (struct timeval s, struct timeval e);
 
 /* Message handling vars */
-static	char		User[80];
-static  char    	Private_group[MAX_GROUP_NAME];
-static  mailbox 	mbox;
-static  unsigned int	mess[MAX_MESSAGE_SIZE];
-static	char * 		HASHTAG = "#";
+static	char			User[80];
+static  char    		Private_group[MAX_GROUP_NAME];
+static  mailbox 		mbox;
+static  Message			mess;
+static	char * 			HASHTAG = "#";
 
 /* Protocol vars  */
 static 	unsigned int		me;
@@ -83,6 +83,7 @@ int main (int argc, char *argv[])  {
   state.fsm = READY;
   join_group(mbox, server_group);
   join_group(mbox, client_group);
+  join_group(mbox, server_name[me]);
 
   logdb("Attaching reader event handler\n");
   logdb("[TRANSITION] Entering RUN state\n");
@@ -163,9 +164,6 @@ void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
     if(!is_client_in_list(members[i], num_connected_clients, connected_clients)) {
       printf("Client %s has connected to the server! \n", members[i]);
       add_client(members[i]);
-	  
-	  // TEMPORARY to est commmo between client & server
-	  send_message(mbox, members[i], "Welcome");
     }
   }
 
@@ -173,16 +171,39 @@ void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
 }
 
 void handle_client_command(char client[MAX_GROUP_NAME]) {
-	Message 	*out_msg;
+	Message 		*out_msg;
+	JoinMessage 	*jm;
+	AppendMessage 	*am;
+	HistoryMessage 	*hm;
 	
-	logdb("Client Request:  %c  -->", mess[0]);
+	logdb("Client Request:  %c\n", mess.tag);
 	
-	switch (mess[0]) {
+	switch (mess.tag) {
 		case VIEW_MSG :
 			prepareViewMsg(out_msg, connected_svr);
-			send_message(mbox, client, out_msg);
-			logdb("Sending list of servers to client <%s>\n", client);
+//			send_message(mbox, client, out_msg);
+			logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
 			break;
+			
+		case JOIN_MSG :
+			jm = (JoinMessage *) mess.payload;
+			logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", 
+					jm->user, client, jm->room);
+			break;
+
+		case HISTORY_MSG :
+			hm = (HistoryMessage *) mess.payload;
+			logdb("HISTORY Request from user: <%s> on client: <%s>, for room <%s>\n", 
+					hm->user, client, hm->room);
+			break;
+
+		case APPEND_MSG :
+			am = (AppendMessage *) mess.payload;
+			logdb("APPEND Request from user: <%s> on client: <%s>, \
+				for room <%s>. Msg is '%s'\n", 
+					am->user, client, am->room, am->text);
+			break;
+
 		default :
 			break;
 	}
@@ -217,7 +238,7 @@ void Initialize (char * server_index) {
   /* Register servers as not connected */
   for (i=0; i<5; i++) {
     strcpy(server_name[i], "server-");
-    server_name[i][7] = (char)(i + (int)'0');
+    server_name[i][7] = (char)(1 + i + (int)'0');
     connected_svr[i] = FALSE;
   }
 }
@@ -234,13 +255,12 @@ static	void	Run()   {
   int		endian_mismatch;
   int		ret;
 
-  char		client[MAX_GROUP_NAME];
   char		*name;
 
   service_type = 0;
 
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
-  	           &mess_type, &endian_mismatch, sizeof(mess), (char *) mess );
+  	           &mess_type, &endian_mismatch, sizeof(mess), (char *) &mess );
   if (ret < 0 )  {
     SP_error(ret);
     exit(0);
@@ -255,7 +275,7 @@ static	void	Run()   {
 
   /*  Processes Message */
   if (Is_regular_mess(service_type))	{
-    logdb("Received a regular message from <%s>. Contents are: %s\n", sender, (char *) mess);
+    logdb("Received a regular message from <%s>. Contents are: %s\n", sender, (char *) &mess);
     logdb("   The user name is <%s>\n", name);
     if (strcmp(sender, server_group) == 0) {
       // MAY WANT TO CHECK IF ITS OUR MESSAGE & DO SOMETHING DIFFERENT (OR IGNORE IT)
@@ -271,9 +291,6 @@ static	void	Run()   {
     char*  changed_group = sender;
     int    num_members   = num_target_groups;
     char*  members       = target_groups;
-
-    // TODO: MAY NEED TO CONSIDER MESS_TYPE to parse mess properly
-    memcpy (client, mess + 6, 32);
 
     if (strcmp(changed_group, server_group) == 0) {
       handle_server_change(num_members, members);
