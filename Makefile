@@ -4,7 +4,7 @@ CFLAGS=-g -Wall -fdiagnostics-color=always -O3
 CPPFLAGS=-I. -I/home/cs437/exercises/ex3/include -I./update_ll
 SP_LIBRARY_DIR=/home/cs437/exercises/ex3
 
-all: chat_server chat_client update_ll_test like_ll_test 
+all: chat_server chat_client update_ll_test like_ll_test chat_ll_test
 
 .o:
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $<
@@ -23,6 +23,9 @@ update_ll_test: update_ll/update_ll.o update_ll/test_update_ll.o
 like_ll_test: like_ll/like_ll.o like_ll/test_like_ll.o
 	$(LD) -o $@ like_ll/test_like_ll.o like_ll/like_ll.o
 
+chat_ll_test: chat_ll/chat_ll.o chat_ll/test_chat_ll.o
+	$(LD) -o $@ chat_ll/test_chat_ll.o chat_ll/chat_ll.o
+
 clean:
-	rm -f *.o 	update_ll/*.o update_ll_test  like_ll_test chat_server chat_client
+	rm -f *.o 	update_ll/*.o update_ll_test chat_ll_test like_ll_test chat_server chat_client
 
