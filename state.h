@@ -8,12 +8,12 @@ typedef struct lts_entry {
 
 
 
-typedef struct room_state {
+typedef struct room_info {
 	char						name[NAME_LEN];
 	char						spread_group[NAME_LEN];
 //	linkedList<name, server>	attendees;
 //	linkedList<chat_message>	history;
-} room_state;
+} room_info;
 
 
 
