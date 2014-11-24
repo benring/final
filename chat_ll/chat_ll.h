@@ -1,7 +1,8 @@
-#ifndef UPDATE_LL_H
-#define UPDATE_LL_H
+#ifndef CHAT_LL_H
+#define CHAT_LL_H
 
 #include "transaction.h"
+#include "lts_utils.h"
 
 typedef struct chat_ll_node {
   chat_info data;

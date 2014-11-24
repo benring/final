@@ -1,7 +1,9 @@
-#ifndef UPDATE_LL_H
-#define UPDATE_LL_H
+#ifndef LIKE_LL_H
+#define LIKE_LL_H
 
-#include "transaction.h"
+#include "config.h"
+#include "state.h"
+#include "lts_utils.h"
 
 typedef struct like_ll_node {
   like_entry data;

@@ -4,7 +4,7 @@
 #define ELEM update
 
 #include "transaction.h"
-
+#include "lts_utils.h"
 
 typedef struct update_ll_node {
   ELEM data;
