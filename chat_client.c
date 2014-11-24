@@ -25,6 +25,8 @@ static  mailbox 	mbox;
 
 static	char		server_group[MAX_GROUP_NAME];
 static	char		my_server[MAX_GROUP_NAME];
+static	char		my_room[MAX_GROUP_NAME];
+static 	char		last_command;
 
 static	int			state;
 
@@ -59,19 +61,43 @@ void Receive_welcome_msg() {
 	logdb("My Server is now set to %s\n", my_server);
 }
 
+
+void Run ()  {
+	
+}
+
 void User_command()   {
 	char	command[130];
 	char	group[MAX_GROUP_NAME];
 	char 	arg[CHAT_LEN];
 	int 	ret, i;
+	Message		*out_msg;
 
 	printf("%s>", User);
 	
 	for( i=0; i < sizeof(command); i++ ) command[i] = 0;
 	if( fgets( command, 130, stdin ) == NULL ) 
 		disconn_spread(mbox);
+	
+	last_command = command[0];
 
-	switch( command[0] )  {
+	switch(last_command)  {
+
+	case 'a':
+		ret = sscanf(&command[2], "%s", arg);
+		if( ret < 1 )  {
+			printf("Proper usage is a <chat_text> \n");
+			break;
+		}
+		else if (state < RUN) {
+			loginfo("You must be logged in and joined to a room to chat.\n");
+			break;
+		}
+		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
+		// SEND JOIN COMMAND TO SERVER 
+		break;
+
+
 	case 'c':
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1 || strlen(arg) > 1)  {
@@ -100,16 +126,60 @@ void User_command()   {
 		// ATTACH FD HERE
 		break;
 
+	case 'h':
+		if (state < RUN) {
+			loginfo("You must be logged in and joined to a room to request a chat history.\n");
+			break;
+		}
+		logdb ("Sending history request for <%s>\n", my_room);
+		// SEND JOIN COMMAND TO SERVER 
+		break;
+
+	case 'l':
+		if (state < RUN) {
+			loginfo("You must be logged in and joined to a room to like a chat.\n");
+			break;
+		}
+		ret = sscanf(&command[2], "%s", arg);
+		if (ret < 1)  {
+			loginfo("Proper usage is l <chat #> \n");
+			break;
+		}
+		// OTHER LIKE ERROR CHECKING GOES HERE
+		logdb ("Liking Chat # <%s>\n", my_room);
+		// SEND LIKE COMMAND TO SERVER 
+		break;
+
+	case 'r':
+		if (state < RUN) {
+			loginfo("You must be logged in and joined to a room to remove a like.\n");
+			break;
+		}
+		ret = sscanf(&command[2], "%s", arg);
+		if (ret < 1)  {
+			loginfo("Proper usage is r <chat #> \n");
+			break;
+		}
+		// OTHER REMOVE-LIKE ERROR CHECKING GOES HERE
+		logdb ("Un-Liking Chat # <%s>\n", my_room);
+		// SEND LIKE COMMAND TO SERVER 
+		break;
+
+
 	case 'j':
-		ret = sscanf(&command[2], "%s", group );
+		ret = sscanf(&command[2], "%s", arg);
 		if( ret < 1 )  {
 			printf("Proper usage is j <room_name> \n");
 			break;
+		}
+		else if (ret > MAX_GROUP_NAME) {
+			loginfo("Please use a name less than %d characters long\n", MAX_GROUP_NAME);
 		}
 		else if (state < CONN) {
 			loginfo("You must be logged in and connected to join a room\n");
 			break;
 		}
+		strcpy(my_room, arg);
 		logdb ("JOIN ROOM: <%s>\n", group);
 		// SEND JOIN COMMAND TO SERVER 
 		break;
@@ -134,6 +204,17 @@ void User_command()   {
 		loginfo("Your username is now set to <%s>\n", User);
 		state = LOGG;
 		break;
+		
+	case 'v':
+		if (state < CONN) {
+			loginfo("You must be logged in and connected to a server to view connected servers.\n");
+			break;
+		}
+		logdb("Sending view server request to server #%s\n", my_server)
+		send_message (mbox, my_server, "View");
+		break;
+
+	
 
 	case '?':
 		Print_menu();
@@ -180,6 +261,11 @@ void Print_menu()  {
 	loginfo("Client Help Menu \n");
 	loginfo("\t%-20s%s\n", "u <username>", "Set user name");
 	loginfo("\t%-20s%s\n", "c <server #>", "Connect to a server, valid #'s are 1-5");
+	loginfo("\t%-20s%s\n", "v", "View connected servers (must be connected to a server)");
 	loginfo("\t%-20s%s\n", "j <room>", "Join a chat room (must be connected to a server)");
+	loginfo("\t%-20s%s\n", "a <chat_text>", "Append chat text to room (must be joined to a room)");
+	loginfo("\t%-20s%s\n", "h", "Get chat room History (must be joined to a room)");
+	loginfo("\t%-20s%s\n", "l <chat #>", "Like a chat text (must be joined to a room)");
+	loginfo("\t%-20s%s\n", "r <chat #>", "Remove a Like (must be joined to a room & have previously likes that chat text)");
 	loginfo("\t%-20s%s\n", "q", "Quit");
 }

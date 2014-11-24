@@ -1,5 +1,6 @@
 #include "config.h"
 #include "transaction.h"
+#include "message.h"
 #include "commo.c"
 
 #define ALL_SERVER_GROUP "server-all"
@@ -29,8 +30,8 @@ static  int		        connected_svr[5];
 static  char			server_name[5][MAX_GROUP_NAME];
 static	char			server_group[MAX_GROUP_NAME];
 static	char			client_group[MAX_GROUP_NAME];
-static  char                    connected_clients[20][MAX_GROUP_NAME];
-static  int                     num_connected_clients = 0;
+static  char            connected_clients[20][MAX_GROUP_NAME];
+static  int             num_connected_clients = 0;
 
 int is_client_in_list(char *cli, int list_len, char cli_list[5][MAX_GROUP_NAME]) {
   int i;
@@ -162,13 +163,33 @@ void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
     if(!is_client_in_list(members[i], num_connected_clients, connected_clients)) {
       printf("Client %s has connected to the server! \n", members[i]);
       add_client(members[i]);
+	  
+	  // TEMPORARY to est commmo between client & server
+	  send_message(mbox, members[i], "Welcome");
     }
   }
 
   print_connected_clients();
 }
 
-void handle_client_command() {return;}
+void handle_client_command(char client[MAX_GROUP_NAME]) {
+	Message 	*out_msg;
+	
+	logdb("Client Request:  %c  -->", mess[0]);
+	
+	switch (mess[0]) {
+		case VIEW_MSG :
+			prepareViewMsg(out_msg, connected_svr);
+			send_message(mbox, client, out_msg);
+			logdb("Sending list of servers to client <%s>\n", client);
+			break;
+		default :
+			break;
+	}
+	
+	return;
+
+}
 void handle_server_update() {return;}
 
 void Initialize (char * server_index) {

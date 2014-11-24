@@ -17,6 +17,7 @@
 #define LTS_VECTOR 'L'
 #define UPDATE 'U'
 #define JOIN_ROOM 'J'
+#define VIEW_MSG 'V'
 
 /*  Actions  */
 #define JOIN 10
@@ -30,15 +31,18 @@ typedef struct Message {
 	char *	payload;
 } Message;
 
-typedef struct LTS_Vector_Message {
+typedef struct LTSVectorMessage {
 	lts_entry		lts[NUM_SERVERS];
 } LTS_Vector_Message;
 
-typedef struct Join_Message {
+typedef struct JoinMessage {
 	char	room[NAME_LEN];
 	char	user[NAME_LEN];  // ???????
 } Join_Message;
 
+typedef struct ViewMessage {
+	int		connected_server[5];
+} ViewMessage;
 
 
 typedef struct LogState {
@@ -49,5 +53,16 @@ typedef struct LogState {
 
 
 
+/*  ALl the PREPARE methods to create the new message */
+void prepareViewMsg (Message * m, int * svr) {
+	ViewMessage *v;
+	int i;
+	
+	m->tag = VIEW_MSG;
+	v = (ViewMessage *) &(m->payload);
+	for (i=0; i<5; i++) {
+		v->connected_server[5] = (svr == 0) ? FALSE : svr[i];
+	}
+}
 
 #endif
