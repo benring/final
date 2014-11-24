@@ -38,10 +38,11 @@ typedef struct like_entry {
 	char 		action;
 } like_entry;
 
-typedef struct chat_message {
-	chat_entry * chat;
-//	linkedList<like_entry_*>	likes;
-} chat_message;
+typedef struct chat_info {
+	lts_entry	lts;
+	chat_entry 	chat;
+	like_ll 	likes;
+} chat_info;
 
 
 typedef struct room_state {
