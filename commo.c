@@ -38,17 +38,14 @@ void disconn_spread(mailbox box)  {
 
 
 /*  connect_spread:  returns the private group name for this node's connection */
-void connect_spread (mailbox * box, char user[MAX_GROUP_NAME], char private_group[MAX_GROUP_NAME])  {
+int connect_spread (mailbox * box, char user[MAX_GROUP_NAME], char private_group[MAX_GROUP_NAME])  {
 	int				ret;
 	sp_time 		test_timeout; 
 	test_timeout.sec = 5;
 	test_timeout.usec = 0;
 	ret = SP_connect_timeout(SPREAD_DAEMON, user, 0, 1, box, private_group, test_timeout );
-	if( ret != ACCEPT_SESSION ) {
-		SP_error( ret );
-		disconn_spread(*box);
-	}
 	loginfo("Connected to daemon: '%s', user is <%s>, private group {%s}\n", SPREAD_DAEMON, user, private_group );
+	return ret;
 }
 
 
@@ -61,5 +58,7 @@ void send_message(mailbox box, char * group, char * msg, int len)   {
 		exit( 0 );
 	}
 }
+
+
 
 #endif

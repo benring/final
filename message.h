@@ -16,18 +16,19 @@
 #define MAX_MESSAGE_SIZE 1024
 
 /*  Message Tag Codes  */
-#define LTS_VECTOR 'L'
+#define LTS_VECTOR 'T'
 #define UPDATE 'U'
 #define APPEND_MSG 'A'
 #define JOIN_MSG 'J'
 #define VIEW_MSG 'V'
 #define HISTORY_MSG 'H'
+#define LIKE_MSG 'L'
 
 /*  Actions  */
 #define JOIN 10
 #define LEAVE 11
-#define ADD_LIKE 12
-#define REM_LIKE 13
+#define ADD_LIKE 'L'
+#define REM_LIKE 'R'
 
 /*  Basic Message Struct:  TAG & PAYLOAD  */
 typedef struct Message {
@@ -65,6 +66,7 @@ typedef struct LikeMessage {
 	lts_entry	lts;
 	char		action;
 } LikeMessage;
+
 
 
 
@@ -122,12 +124,13 @@ void prepareAppendMsg (Message * m, char * roomname, char * user, char * text) {
 
 void prepareLikeMsg (Message * m, char * user, lts_entry ref, char act) {
 	LikeMessage *lm;
-	logdb("Preparing Like Msg:  room: <%s>, user: <%s>\n", roomname, user);
+	logdb("Preparing Like Msg:  user: <%s>, action: <%c>, LTS: %d,%d\n", 
+			user, act, ref.ts, ref.pid);
 	m->tag = LIKE_MSG;
 	lm = (LikeMessage *) &(m->payload);
 	strcpy(lm->user, user);
-	lm->lts.ts = 0;
-	lm->lts.pid = 0;
+	lm->lts.ts = ref.ts;
+	lm->lts.pid = ref.pid;
 	lm->action = act;
 }
 

@@ -74,6 +74,9 @@ void User_command()   {
 	char	group[MAX_GROUP_NAME];
 	char 	arg[CHAT_LEN];
 	int 	ret, i;
+	char 	client_id[3];
+	
+	lts_entry	ref;
 
 	printf("%s>", User);
 	
@@ -121,6 +124,27 @@ void User_command()   {
 		logdb ("CONNECT to Server <%s>\n", arg);
 		strcpy(server_group, SERVER_GROUP_PREFIX);
 		server_group[8] = arg[0];
+		
+		User[0] = arg[0];
+
+		i = 1;
+		do {
+			if (i == 100)  {
+				SP_error(ret);
+				logerr("User is only allowed 100 clients per server!\n");
+				disconn_spread(mbox);
+			}
+			sprintf(client_id, "%02d", i++);
+			memcpy(&User[1], client_id, 2);
+			ret = connect_spread(&mbox, User, Private_group);
+			
+
+		} while (ret != ACCEPT_SESSION);
+		/* Connect to Spread */
+		E_init();
+
+		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
+
 		join_group(mbox, server_group);
 		strcpy(server_inbox, SERVER_NAME_PREFIX);
 		server_inbox[7] = arg[0];
@@ -157,8 +181,11 @@ void User_command()   {
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
 		logdb ("Liking Chat # <%s>\n", my_room);
-		logdb ("Sending history request for <%s>\n", my_room);
-		prepareHistoryMsg(out_msg, User, LTS???, LIKE);
+		
+		// TEMP DUMMY VAL FOR NOW
+		ref.ts = 0;
+		ref.pid = 1;
+		prepareLikeMsg(out_msg, User, ref, ADD_LIKE);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
@@ -174,7 +201,12 @@ void User_command()   {
 		}
 		// OTHER REMOVE-LIKE ERROR CHECKING GOES HERE
 		logdb ("Un-Liking Chat # <%s>\n", my_room);
-		// SEND LIKE COMMAND TO SERVER 
+		
+		// TEMP DUMMY VAL FOR NOW
+		ref.ts = 0;
+		ref.pid = 1;
+		prepareLikeMsg(out_msg, User, ref, REM_LIKE);
+		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
 
@@ -217,8 +249,12 @@ void User_command()   {
 			loginfo("Please limit your name to %d charaters or less\n", USER_NAME_LIMIT);
 			break;
 		}
-		strcpy(User, arg);
-		loginfo("Your username is now set to <%s>\n", User);
+		User[0] = '0';
+		User[1] = '0';
+		User[2] = '0';
+		loginfo("user is <%s>, arg is <%s>\n", User, arg);
+		strcpy(&User[3], arg);
+		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
 		state = LOGG;
 		break;
 		
@@ -259,10 +295,9 @@ int main (int argc, char *argv[])  {
 	
 	Initialize();
 	
-	/* Connect to Spread */
-	connect_spread(&mbox, User, Private_group);
-	E_init();
-
+	while (state < CONN) {
+		User_command();
+	}
 	
 	E_attach_fd( 0, READ_FD, User_command, 0, NULL, LOW_PRIORITY );
 	E_attach_fd( mbox, READ_FD, Read_message, 0, NULL, LOW_PRIORITY );

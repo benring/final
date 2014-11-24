@@ -3,18 +3,8 @@
 
 #define ELEM update
 
-/* TODO: fix transaction.h and use provided struct definitions for lts and update */
-/*#include "transaction.h"*/
-typedef struct lts_entry {
-	int		ts;
-	int		pid;
-} lts_entry;
+#include "transaction.h"
 
-typedef struct update {
-	char 		tag;   		/* log type: [R | C | L] */
-	lts_entry 	lts;			/* Global sequence # */
-	char * 		entry;		/* One of three possible entries */
-} update;
 
 typedef struct update_ll_node {
   ELEM data;

@@ -7,24 +7,23 @@
 #define CHAT 'C'
 #define LIKE 'L'
 
+#define MAX_ENTRY_SIZE 256
+
 
 typedef struct lts_entry {
-	int		ts;
-	int		pid;
+	unsigned	int		ts;
+	unsigned	int		pid;
 } lts_entry;
 
 
 typedef struct update {
 	char 		tag;   		/* log type: [R | C | L] */
 	lts_entry 	lts;			/* Global sequence # */
-	char * 		entry;		/* One of three possible entries */
+	char  		entry[MAX_ENTRY_SIZE];		/* One of three possible entries */
 } update;
 
 typedef struct room_entry {
-	char 	user[NAME_LEN];
-	int 	server;
 	char 	room[NAME_LEN];
-	char 	action;
 } room_entry;
 
 typedef struct chat_entry {
@@ -52,11 +51,14 @@ typedef struct room_state {
 //	linkedList<chat_message>	history;
 } room_state;
 
-typedef struct connected_client {
-	char 	spread_grp[NAME_LEN];
-	char	user[NAME_LEN];
-	char	room[NAME_LEN];	
-} connected_client;
+
+
+typedef struct client_info {
+	char	name[MAX_GROUP_NAME];   /* Full Spread name */
+	char	user[MAX_GROUP_NAME];	/* Just User Name */
+	char	room[MAX_GROUP_NAME];	/* User's current room */
+} client_info;
+
 
 
 
