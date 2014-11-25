@@ -21,23 +21,24 @@
 
 
 /* Message handling vars */
-static	char		  User[USER_NAME_LIMIT];
-static  char    	Private_group[MAX_GROUP_NAME];
-static  mailbox 	mbox;
-static  Message				    *out_msg;
-static  Message           in_msg;
+static	char		    User[USER_NAME_LIMIT];
+static  char    	  Private_group[MAX_GROUP_NAME];
+static  mailbox 	  mbox;
+static  Message		  *out_msg;
+static  Message     in_msg;
 static	lts_entry		null_lts;
-static	char		  mess[MAX_MESSAGE_SIZE];
+static	char		    mess[MAX_MESSAGE_SIZE];
 
 /*  Client Global State  */
 static	int			  state;
 static	char		  server_group[MAX_GROUP_NAME];
-static	char		  my_server[MAX_GROUP_NAME];
 static	char		  my_room[MAX_GROUP_NAME];
+static  char      my_room_distrolist[MAX_GROUP_NAME];
 static	char		  server_inbox[MAX_GROUP_NAME];
 static 	char		  last_command;
 static  chat_ll   chat_room;
 static  int       connected_server[5];
+static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
 
 
 void Initialize();
@@ -143,8 +144,6 @@ void Read_message() {
 
   logdb("----------------------\n");
   name = strtok(sender, HASHTAG);
-
-  
   
   /*  Processes Message -- should only be from our server */
   if (Is_regular_mess(service_type))	{
@@ -188,12 +187,6 @@ void Read_message() {
   }
 
 
-void Run ()  {
-	
-  
-  
-}
-
 void User_command()   {
 	char	command[100];
 	char	group[MAX_GROUP_NAME];
@@ -213,6 +206,7 @@ void User_command()   {
 
 	switch(last_command)  {
 
+  /* ------------- APPEND --------------------------------------*/
 	case 'a':
 		ret = sscanf(&command[2], "%[^\n]s", arg);
 		if( ret < 1 )  {
@@ -232,6 +226,7 @@ void User_command()   {
 		break;
 
 
+  /* ------------- CONNECT --------------------------------------*/
 	case 'c':
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1 || strlen(arg) > 1)  {
@@ -246,6 +241,16 @@ void User_command()   {
 			loginfo("You must select a username before connecting to a server\n");
 			break;
 		}
+    
+    clear_state();
+    /*  Disconnect from current server, if already connected */
+    if (my_server >= 0) {
+      my_server = -1;
+    // TODO:  Any other disconn logic goes here
+    }
+    my_server = atoi(arg[0]) - 1;
+
+    
 		logdb ("CONNECT to Server <%s>\n", arg);
 		strcpy(server_group, SERVER_GROUP_PREFIX);
 		server_group[8] = arg[0];
@@ -278,6 +283,7 @@ void User_command()   {
 		// ATTACH FD HERE
 		break;
 
+  /* ------------- HISTORY --------------------------------------*/
 	case 'h':
 		if (state < RUN) {
 			loginfo("You must be logged in and joined to a room to request a chat history.\n");
@@ -289,6 +295,7 @@ void User_command()   {
 		
 		break;
 
+  /* ------------- LIKE --------------------------------------*/
 	case 'l':
 		if (state < RUN) {
 			loginfo("You must be logged in and joined to a room to like a chat.\n");
@@ -309,6 +316,7 @@ void User_command()   {
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
+  /* ------------- REMOVE LIKE --------------------------------------*/
 	case 'r':
 		if (state < RUN) {
 			loginfo("You must be logged in and joined to a room to remove a like.\n");
@@ -330,6 +338,7 @@ void User_command()   {
 		break;
 
 
+  /* ------------- JOIN --------------------------------------*/
 	case 'j':
 		ret = sscanf(&command[2], "%s", arg);
 		if( ret < 1 )  {
@@ -343,27 +352,39 @@ void User_command()   {
 			loginfo("You must be logged in and connected to join a room\n");
 			break;
 		}
-		strcpy(my_room, arg);
-		logdb ("JOIN ROOM: <%s>\n", my_room);
 
-    // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
-      //  function or we need to free the mem)
-    chat_room = chat_ll_create();
+    clear_state();
+
+		logdb ("JOIN ROOM: <%s>\n", my_room);
+		strcpy(my_room, arg);
     
+    
+
 		// SEND JOIN COMMAND TO SERVER 
 		prepareJoinMsg(out_msg, my_room, User, null_lts);
 		logdb("Message contents: <%s>\n", out_msg);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+
+    /*  Clients JOIN 2 groups for a room:
+     *    1. Spread Distro group for 'my_server' (to receive updates)
+     *    2. Spread Membership group for attendees  */
+    my_room_distrolist[0] = User[0];
+ 		strcpy(&my_room_distrolist[1], my_room);
+    join_group(mbox, my_room_distrolist);
+    join_group(mbox, my_room);
+
     
 		state = RUN;
 		
 		break;
 
+  /* ------------- QUIT --------------------------------------*/
 	case 'q':
 		logdb("QUITTING\n");
 		disconn_spread(mbox);
 		break;
 		
+  /* ------------- USERNAME --------------------------------------*/
 	case 'u':
 		logdb("SETTING USERNAME\n");
 		ret = sscanf(&command[2], "%s", arg);
@@ -384,6 +405,7 @@ void User_command()   {
 		state = LOGG;
 		break;
 		
+  /* ------------- VIEW SERVERS --------------------------------------*/
 	case 'v':
 		if (state < CONN) {
 			loginfo("You must be logged in and connected to a server to view connected servers.\n");
@@ -395,6 +417,7 @@ void User_command()   {
 		send_message (mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
+  /* ------------- PRINT MENU --------------------------------------*/
 	case '?':
 		Print_menu();
 		break;
@@ -404,8 +427,6 @@ void User_command()   {
 		Print_menu();
 	}
 }
-
-
 
 
 int main (int argc, char *argv[])  {
@@ -432,11 +453,29 @@ int main (int argc, char *argv[])  {
 }
 
 
+void clear_state ()  {
+      /*  Cleare current state if already in room */
+    if (my_room[0] != '\0') {
+      leave_group(mbox, my_room);
+      leave_group(mbox, my_room_distrolist);
+      my_room[0] = '\0';
+      my_room_distrolist[0] = '\0';
+      // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
+      //  function or we need to free the mem)
+      // TODO:  CLEAR Attendee list HERE
+      
+    }
+    chat_room = chat_ll_create();
+    // attendee_list = ?????
+
+}
+
 void Initialize() {
 	state = INIT;
 	out_msg = malloc(MAX_MESSAGE_SIZE);
 	null_lts.pid = 0;
 	null_lts.ts = 0;
+  my_server = -1;
 }
 
 void Print_menu()  {

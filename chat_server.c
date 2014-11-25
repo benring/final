@@ -32,7 +32,7 @@ static	Message			update_message;
 
 /* Protocol vars  */
 static 	unsigned int		me;
-static  unsigned int		my_server_id;
+static  char    		my_server_id;
 static  char				server_name[5][MAX_GROUP_NAME];
 static	char				server_group[MAX_GROUP_NAME];
 static	char				client_group[MAX_GROUP_NAME];
@@ -174,6 +174,7 @@ void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
 
 void apply_room_update (char * name)  {
 			room_info		*new_room;
+      char        distrolist[MAX_GROUP_NAME];
 	
 			/*  If this is a new room, create it & add to room list */
 			if (room_ll_get(&rooms, name) == 0) {
@@ -182,7 +183,15 @@ void apply_room_update (char * name)  {
 				new_room->chats = chat_ll_create();
 				room_ll_append(&rooms, *new_room);
 				logdb("NEW ROOM created, <%s>\n", new_room->name);
-			}
+        
+    /*  Server JOINs 2 groups for a room:
+     *    1. Spread Distro group for to send updates to clients in the room
+     *    2. Spread Membership group for attendees  */		
+        distrolist[0] = my_server_id;
+        strcpy(&distrolist[1], name);
+        join_group(mbox, distrolist);
+        join_group(mbox, name);
+      }
 			else {
 				logdb("Room '%s' already exists", new_room->name);
 			}
@@ -216,6 +225,11 @@ void apply_update (update * u) {
 	room_info		*rm;
 	chat_ll			*chat_list;
 	
+  /* Update LTS if its higher than our current one  */
+  if (u->lts.ts > lts)  {
+    lts = u->lts.ts;
+  }
+  
 	switch (u->tag)  {
 		case ROOM: 
 			re = (room_entry *) &(u->entry);
@@ -422,12 +436,14 @@ void handle_server_update() {
 void Initialize (char * server_index) {
   int 		i;
   char 		index;
+  int    serverid;
 
-  /* Parse server's index  */
-  my_server_id = atoi(server_index);
-  index = (char)(my_server_id + (int)'0');
+  /* Parse server's index  -- Elaborate to reduce 0/1 indexing confusion */
+  my_server_id = server_index;
+  serverid = atoi(server_index);
+  index = (char)(serverid + (int)'0');
 
-  me = my_server_id - 1;
+  me = serverid - 1;
 
   /* Set group name for the all-server group */
   strcpy(server_group, SERVER_ALL_GROUP_NAME);

@@ -29,6 +29,16 @@ void join_group (mailbox box, char name[MAX_GROUP_NAME])  {
 	printf("Joined to {%s}. \n", name);
 }
 
+void leave_group (mailbox box, char name[MAX_GROUP_NAME])  {
+	int res;
+	res = SP_leave(box, name);
+	if(res < 0) {
+		SP_error(res);
+	}
+	printf("Left Group: {%s}. \n", name);
+}
+
+
 /*  Called upon termination */
 void disconn_spread(mailbox box)  {
 	printf("\nTerminating.\n");
