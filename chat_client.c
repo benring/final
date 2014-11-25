@@ -84,17 +84,15 @@ void process_server_message() {
       /* Append to global chat list  */
       chat_ll_insert_inorder(&chat_room, *ch);
       
-      /* Trim room to most recent 25 chats */ 
-      while(chat_ll_length(&chat_room) > 25) {
-        chat_ll_remove_first(&chat_room);
-      }
-      
+      // TODO:  Only DISPLAY last 25 chats
       chat_ll_print(&chat_room); 
 
       break;  
       
    /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/
     case LIKE_MSG:
+    
+    
       break;
 
    /* ---------  VIEW MESSAGE -- FROM: SVR  ------------*/
@@ -219,7 +217,7 @@ void User_command()   {
 	char	command[100];
 	char	group[MAX_GROUP_NAME];
 	char 	arg[CHAT_LEN];
-	int 	ret, i;
+	int 	ret, i, like_num;
 	char 	client_id[3];
 	
 	lts_entry	ref;
@@ -335,11 +333,16 @@ void User_command()   {
 			break;
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
-		logdb ("Liking Chat # <%s>\n", my_room);
+    like_num = atoi(arg);
+		logdb ("Liking Chat # <%d>\n", like_num);
 		
-		// TEMP DUMMY VAL FOR NOW
-		ref.ts = 0;
-		ref.pid = 1;
+	  ref = chat_ll_get_lts(&chat_room, like_num);
+    
+    if (lts_eq(ref, null_lts)) {
+      loginfo("You cannot like a chat that does not exist.\n");
+      break;
+    }
+    
 		prepareLikeMsg(out_msg, User, ref, ADD_LIKE, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
@@ -355,12 +358,17 @@ void User_command()   {
 			loginfo("Proper usage is r <chat #> \n");
 			break;
 		}
-		// OTHER REMOVE-LIKE ERROR CHECKING GOES HERE
-		logdb ("Un-Liking Chat # <%s>\n", my_room);
+		// OTHER LIKE ERROR CHECKING GOES HERE
+    like_num = atoi(arg);
+		logdb ("Un-Liking Chat # <%d>\n", like_num);
 		
-		// TEMP DUMMY VAL FOR NOW
-		ref.ts = 0;
-		ref.pid = 1;
+    ref = chat_ll_get_lts(&chat_room, like_num);
+    
+    if (lts_eq(ref, null_lts)) {
+      loginfo("You cannot Un-like a chat that does not exist.\n");
+      break;
+    }
+    
 		prepareLikeMsg(out_msg, User, ref, REM_LIKE, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
@@ -494,7 +502,7 @@ void clear_state ()  {
       
     }
     chat_room = chat_ll_create();
-    // attendee_list = ?????
+    attendees = client_ll_create();
 
 }
 

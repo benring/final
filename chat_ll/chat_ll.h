@@ -52,4 +52,6 @@ int chat_ll_length(chat_ll *list);
 
 void chat_ll_remove_first(chat_ll *list);
 
+lts_entry chat_ll_get_lts(chat_ll *list, int i);
+
 #endif

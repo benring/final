@@ -19,19 +19,38 @@ int chat_ll_is_empty(chat_ll* list) {
 }
 
 void chat_ll_print(chat_ll* list) {
+  int   index = 1;
+
   if (chat_ll_is_empty(list)) {
     printf("Empty List\n");
   }
   else {
-    printf("First: (%d,%d)\n", list->first->data.lts.ts, list->first->data.lts.pid);
-    printf("Last: (%d,%d)\n", list->last->data.lts.ts, list->last->data.lts.pid);
-    printf("Contents: \n");
     chat_ll_node* curr = list->first;
     while (curr) {
-      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
+//      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
+      printf("%d. [%s]: %s\n", index++, curr->data.chat.user, curr->data.chat.text);
       curr = curr->next;
     }
   }
+}
+
+lts_entry chat_ll_get_lts(chat_ll *list, int i) {
+  int curr_index = 1;
+  lts_entry blank;
+  chat_ll_node* curr_node = list->first;
+  
+  while (curr_node) {
+    if(curr_index == i) {
+      return curr_node->data.lts;
+    }
+    curr_index++;
+    curr_node = curr_node->next;
+  }
+
+  blank.ts = 0;
+  blank.pid = 0;
+  return blank;
+
 }
 
 int chat_ll_append(chat_ll* list, chat_info data) {

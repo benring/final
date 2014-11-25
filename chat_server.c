@@ -233,12 +233,18 @@ void apply_chat_update (room_info *rm, chat_entry * ce, lts_entry * ts) {
 
 }
 
+
 void apply_update (update * u) {
 	
 	room_entry	*re;
 	chat_entry  *ce;
+  like_entry  *le;
 	room_info		*rm;
 	chat_ll			*chat_list;
+  like_ll     *like_list;
+  like_entry  *new_like;
+  chat_info   *ch;
+  update      *mu;
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -265,6 +271,39 @@ void apply_update (update * u) {
 			break;
 			
 		case LIKE:
+			le = (like_entry *) &(u->entry);
+
+      mu = update_ll_get_inorder(&updates, le->lts);
+      if (mu->tag != CHAT) {
+        logerr("ERROR! Reference to non-chat update\n");
+        return;
+      }
+      
+      ce = (chat_entry *) &(mu->entry);
+			rm = room_ll_get(&rooms, ce->room);
+			chat_list = &(rm->chats);
+      if (!chat_list) {
+        logdb("ERROR! Chat list does not exist for this room\n");
+        return;
+      }
+      
+
+      
+      ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
+      like_list = &(ch->likes);
+
+			if (like_ll_get_inorder_fromback(like_list, u->lts) == 0) {
+          new_like = malloc (sizeof(like_entry));
+          strcpy(new_like->user, le->user);
+          new_like->action = le->action;
+        
+          /*  new_like takes the 'update' LTS to serialize the like in the LL */
+          new_like->lts.pid = u->lts.pid;
+          new_like->lts.ts = u->lts.ts;
+//				apply_chat_update (rm, ce, &(u->lts));
+          like_ll_insert_inorder(like_list, *new_like);
+          like_ll_print(like_list);
+			}
 		
 			break;
 			
@@ -280,6 +319,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 	AppendMessage 	*am;
 	HistoryMessage 	*hm;
 	LikeMessage 		*lm;
+  chat_ll_node         *curr_chat;
 	
 	// TODO:  TEMP CHAT LIST FOR TESTING
 	chat_info		*new_chat;
@@ -315,6 +355,26 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 			prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
 			send_message(mbox, server_group, &out_msg, sizeof(Message));
 			
+      /* Send room chat history to the client */
+      new_room = room_ll_get(&rooms, jm->room);
+      curr_chat = (new_room->chats.first);
+      while(curr_chat) {
+        new_chat = &(curr_chat->data);
+        prepareAppendMsg(&out_msg, new_chat->chat.room, new_chat->chat.user, new_chat->chat.text, new_chat->lts);
+			  send_message(mbox, client, &out_msg, sizeof(Message));
+        
+        /*  
+         * curr_like = new_chat->likes
+         * while (curr_like) {
+         *   new_like = curr_like->data;
+         *   prepareLikeMsg()
+         *   send_message()
+         *   curr_like = curr_like->next;
+         * }
+         */
+         curr_chat = curr_chat->next;
+      }
+      
 			break;
 
 /*   -----------  HISTORY REQUEST   -  from user ---------- */
@@ -349,6 +409,17 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 			lm = (LikeMessage *) mess.payload;
 			logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
 			logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->lts.ts, lm->lts.pid);
+
+			build_likeEntry(lm->user, lm->ref, lm->action);
+
+			/* Save to disk, store in memory, & apply to global state  */
+			// TODO:  fprintf (....)
+			update_ll_insert_inorder_fromback(&updates, *out_update);
+			apply_update(out_update);
+			
+			/* Send update for a new chat messge */
+			prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
+			send_message(mbox, server_group, &out_msg, sizeof(Message));
 			
 
 		default :
