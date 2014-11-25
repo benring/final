@@ -23,16 +23,14 @@ void client_ll_print(client_ll* list) {
     printf("Empty List\n");
   }
   else {
-    /*
-    printf("First: (%d,%d)\n", list->first->data.lts.ts, list->first->data.lts.pid);
-    printf("Last: (%d,%d)\n", list->last->data.lts.ts, list->last->data.lts.pid);
+    printf("First: %s\n", list->first->data.name);
+    printf("Last: %s\n", list->last->data.name);
     printf("Contents: \n");
     client_ll_node* curr = list->first;
     while (curr) {
-      printf("(%d,%d)\n", curr->data.lts.ts, curr->data.lts.pid);
+      printf("%s\n", curr->data.name);
       curr = curr->next;
     }
-    */
   }
   
 }

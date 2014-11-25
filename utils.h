@@ -30,15 +30,16 @@ int get_server_num (char * svr_name) {
   return num-1;  
 }
 
-void remove_client(int pos) {
+void remove_client(char *name) {
   num_connected_clients -= 1;
-  /* Copy the last element of the list into this position */
-  memcpy(connected_clients[pos], connected_clients[num_connected_clients], MAX_GROUP_NAME);
+  client_ll_remove(&connected_clients, name);
 }
 
 void add_client(char *name) {
-  memcpy(connected_clients[num_connected_clients], name, MAX_GROUP_NAME);
+  client_info new_client;
+  strcpy(new_client.name, name);
   num_connected_clients += 1;
+  client_ll_append(&connected_clients, new_client);
 }
 
 void print_connected_servers () {
@@ -57,8 +58,5 @@ void print_connected_clients() {
   /* Print current clients */
   logdb("Current client list: \n");
 
-  for (i=0; i<num_connected_clients; i++) {
-    logdb("  -%s\n", connected_clients[i]);
-  }
-
+  client_ll_print(&connected_clients);
 }
