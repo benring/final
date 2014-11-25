@@ -4,6 +4,12 @@
 #include "transaction.h"
 #include "lts_utils.h"
 
+typedef struct chat_info {
+	lts_entry	lts;
+	chat_entry 	chat;
+	like_ll 	likes;
+} chat_info;
+
 typedef struct chat_ll_node {
   chat_info data;
   struct chat_ll_node* prev;

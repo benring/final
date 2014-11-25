@@ -1,20 +1,9 @@
 #ifndef STATE_H
 #define STATE_H
 
-typedef struct lts_entry {
-	unsigned	int		ts;
-	unsigned	int		pid;
-} lts_entry;
+//#include "chat_ll.h"
 
-
-
-typedef struct room_info {
-	char						name[NAME_LEN];
-	char						spread_group[NAME_LEN];
-//	linkedList<name, server>	attendees;
-//	linkedList<chat_message>	history;
-} room_info;
-
+#include "lts_utils.h"
 
 
 typedef struct client_info {

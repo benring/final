@@ -39,9 +39,12 @@ void room_ll_print(room_ll* list) {
 
 int room_ll_append(room_ll* list, room_info data) {
   room_ll_node *node = malloc(sizeof(room_ll_node));
+	room_ll_node *old_last;
+	
   if (!node) {
     return 0; /* failure */
   }
+
   node->data = data;
   node->prev = 0;
   node->next = 0;
@@ -51,7 +54,7 @@ int room_ll_append(room_ll* list, room_info data) {
     list->last = node;
   }
   else {
-    room_ll_node* old_last = list->last;
+    old_last = list->last;
     old_last->next = node;
     node->prev = old_last;
     list->last = node;
@@ -60,21 +63,20 @@ int room_ll_append(room_ll* list, room_info data) {
   return 1; /* success */
 }
 
-/*room_info* room_ll_get(room_ll* list, lts_entry lts) {
+room_info* room_ll_get(room_ll* list, char * name) {
   room_info* result = 0;
+  room_ll_node* curr = list->first;
+
   if (room_ll_is_empty(list)) {
     return result;
   }
 
-  room_ll_node* curr = list->first;
   while(curr) {
-    if(lts_eq(curr->data.lts, lts)) {
-      result = &curr->data;
-      return result;
-    }
-    curr = curr->next;
-  }
-  
+		if (strcmp(curr->data.name, name) == 0) {
+			result = &curr->data;
+			return result;
+		}
+		curr = curr->next;
+	}
   return result;
 }
-*/

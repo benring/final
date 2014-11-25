@@ -43,12 +43,14 @@ typedef struct LTSVectorMessage {
 typedef struct JoinMessage {
 	char	user[NAME_LEN];
 	char	room[NAME_LEN];
+	lts_entry	lts;
 } JoinMessage;
 
 typedef struct AppendMessage {
 	char	user[NAME_LEN];
 	char	room[NAME_LEN];
 	char	text[CHAT_LEN];
+	lts_entry	lts;
 } AppendMessage;
 
 typedef struct HistoryMessage {
@@ -65,6 +67,7 @@ typedef struct LikeMessage {
 	char		user[NAME_LEN];
 	lts_entry	lts;
 	char		action;
+	lts_entry	ref;
 } LikeMessage;
 
 
@@ -91,13 +94,15 @@ void prepareViewMsg (Message * m, int * svr) {
 }
 
 
-void prepareJoinMsg (Message * m, char * roomname, char * user) {
+void prepareJoinMsg (Message * m, char * roomname, char * user, lts_entry lts) {
 	JoinMessage *jm;
 	logdb("Preparing Join Msg:  room: <%s>, user: <%s>\n", roomname, user);
 	m->tag = JOIN_MSG;
 	jm = (JoinMessage *) &(m->payload);
 	strcpy(jm->user, user);
 	strcpy(jm->room, roomname);
+	jm->lts.pid = lts.pid;
+	jm->lts.ts = lts.ts;
 }
 
 void prepareHistoryMsg (Message * m, char * roomname, char * user) {
@@ -111,7 +116,7 @@ void prepareHistoryMsg (Message * m, char * roomname, char * user) {
 
 
 
-void prepareAppendMsg (Message * m, char * roomname, char * user, char * text) {
+void prepareAppendMsg (Message * m, char * roomname, char * user, char * text, lts_entry lts) {
 	AppendMessage *am;
 	logdb("Preparing Append Msg:  room: <%s>, user: <%s>, text: '%s'\n", roomname, user, text);
 	m->tag = APPEND_MSG;
@@ -119,19 +124,23 @@ void prepareAppendMsg (Message * m, char * roomname, char * user, char * text) {
 	strcpy(am->user, user);
 	strcpy(am->room, roomname);
 	strcpy(am->text, text);
+	am->lts.pid = lts.pid;
+	am->lts.ts = lts.ts;
 }
 
 
-void prepareLikeMsg (Message * m, char * user, lts_entry ref, char act) {
+void prepareLikeMsg (Message * m, char * user, lts_entry ref, char act, lts_entry lts) {
 	LikeMessage *lm;
 	logdb("Preparing Like Msg:  user: <%s>, action: <%c>, LTS: %d,%d\n", 
 			user, act, ref.ts, ref.pid);
 	m->tag = LIKE_MSG;
 	lm = (LikeMessage *) &(m->payload);
 	strcpy(lm->user, user);
-	lm->lts.ts = ref.ts;
-	lm->lts.pid = ref.pid;
+	lm->ref.ts = ref.ts;
+	lm->ref.pid = ref.pid;
 	lm->action = act;
+	lm->lts.pid = lts.pid;
+	lm->lts.ts = lts.ts;
 }
 
 

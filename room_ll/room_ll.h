@@ -2,7 +2,14 @@
 #define ROOM_LL_H
 
 #include "transaction.h"
+#include "chat_ll.h"
 #include "lts_utils.h"
+
+typedef struct room_info {
+	char						name[NAME_LEN];
+	char						spread_group[NAME_LEN];
+	chat_ll					chats;
+} room_info;
 
 typedef struct room_ll_node {
   room_info data;
@@ -28,6 +35,6 @@ void room_ll_print(room_ll* list);
 int room_ll_append(room_ll* list, room_info data);
 
 /* Search the whole (unordered) list for an lts */ 
-/*room_info* room_ll_get(room_ll *list, lts_entry lts); */
+room_info* room_ll_get(room_ll *list, char * name); 
 
 #endif

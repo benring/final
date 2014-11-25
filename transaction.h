@@ -2,7 +2,7 @@
 #define TRANSACTION_H
 
 #include "config.h"
-#include "state.h"
+//#include "state.h"
 #include "like_ll.h"
 
 #define ROOM 'R'
@@ -29,11 +29,7 @@ typedef struct chat_entry {
 
 
 
-typedef struct chat_info {
-	lts_entry	lts;
-	chat_entry 	chat;
-	like_ll 	likes;
-} chat_info;
+
 
 /*  Type of functions for turning stable data into current stae */
 /*  return types TBD */

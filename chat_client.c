@@ -23,6 +23,7 @@ static	char		User[USER_NAME_LIMIT];
 static  char    	Private_group[MAX_GROUP_NAME];
 static  mailbox 	mbox;
 Message				*out_msg;
+static	lts_entry		null_lts;
 
 
 static	char		server_group[MAX_GROUP_NAME];
@@ -70,7 +71,7 @@ void Run ()  {
 }
 
 void User_command()   {
-	char	command[130];
+	char	command[100];
 	char	group[MAX_GROUP_NAME];
 	char 	arg[CHAT_LEN];
 	int 	ret, i;
@@ -81,7 +82,7 @@ void User_command()   {
 	printf("%s>", User);
 	
 	for( i=0; i < sizeof(command); i++ ) command[i] = 0;
-	if( fgets( command, 130, stdin ) == NULL ) 
+	if( fgets( command, 100, stdin ) == NULL ) 
 		disconn_spread(mbox);
 	
 	last_command = command[0];
@@ -89,7 +90,7 @@ void User_command()   {
 	switch(last_command)  {
 
 	case 'a':
-		ret = sscanf(&command[2], "%s", arg);
+		ret = sscanf(&command[2], "%[^\n]s", arg);
 		if( ret < 1 )  {
 			printf("Proper usage is a <chat_text> \n");
 			break;
@@ -98,12 +99,12 @@ void User_command()   {
 			loginfo("You must be logged in and joined to a room to chat.\n");
 			break;
 		}
+		if (strlen(arg) > 80) {
+			printf(" Text chat too long (80 Char max). Truncating your chat\n");
+		}
 		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
-		// SEND APPEND COMMAND TO SERVER 
-		prepareAppendMsg(out_msg, my_room, User, arg);
+		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
-
-		
 		break;
 
 
@@ -185,7 +186,7 @@ void User_command()   {
 		// TEMP DUMMY VAL FOR NOW
 		ref.ts = 0;
 		ref.pid = 1;
-		prepareLikeMsg(out_msg, User, ref, ADD_LIKE);
+		prepareLikeMsg(out_msg, User, ref, ADD_LIKE, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
@@ -205,7 +206,7 @@ void User_command()   {
 		// TEMP DUMMY VAL FOR NOW
 		ref.ts = 0;
 		ref.pid = 1;
-		prepareLikeMsg(out_msg, User, ref, REM_LIKE);
+		prepareLikeMsg(out_msg, User, ref, REM_LIKE, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
@@ -226,7 +227,7 @@ void User_command()   {
 		strcpy(my_room, arg);
 		logdb ("JOIN ROOM: <%s>\n", my_room);
 		// SEND JOIN COMMAND TO SERVER 
-		prepareJoinMsg(out_msg, my_room, User);
+		prepareJoinMsg(out_msg, my_room, User, null_lts);
 		logdb("Message contents: <%s>\n", out_msg);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		state = RUN;
@@ -312,6 +313,8 @@ int main (int argc, char *argv[])  {
 void Initialize() {
 	state = INIT;
 	out_msg = malloc(MAX_MESSAGE_SIZE);
+	null_lts.pid = 0;
+	null_lts.ts = 0;
 }
 
 void Print_menu()  {
