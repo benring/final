@@ -28,7 +28,6 @@ static	char			User[80];
 static  char    		Private_group[MAX_GROUP_NAME];
 static  mailbox 		mbox;
 static  Message			mess;
-static	char * 			HASHTAG = "#";
 static	Message			update_message;
 
 /* Protocol vars  */
@@ -92,6 +91,7 @@ int main (int argc, char *argv[])  {
 #include "utils.h"
 
 void handle_server_change(int num_members, char members[5][MAX_GROUP_NAME]) {
+  Message out_msg;
   /* Re-compute the connected server list */
   int new_connected_svr[5];
   int i;
@@ -122,6 +122,12 @@ void handle_server_change(int num_members, char members[5][MAX_GROUP_NAME]) {
   }
 
   print_connected_servers();
+
+  /*  Send updated list of connected servers to all clients  */
+  prepareViewMsg(&out_msg, connected_svr);
+  send_message(mbox, client_group, &out_msg, sizeof(Message));
+  logdb("Sending updated list of servers to all clients\n");
+
 
   /* TODO revisit this:
   if (joined)  {
@@ -237,7 +243,7 @@ void apply_update (update * u) {
 }
 
 void handle_client_command(char client[MAX_GROUP_NAME]) {
-	Message 				*out_msg;
+	Message 				out_msg;
 	JoinMessage 		*jm;
 	AppendMessage 	*am;
 	HistoryMessage 	*hm;
@@ -251,12 +257,15 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 	logdb("Client Request:  %c\n", mess.tag);
 	
 	switch (mess.tag) {
+    
+ /*   -----------  VIEW REQUEST   -  from user ---------- */
 		case VIEW_MSG :
-			prepareViewMsg(out_msg, connected_svr);
-//			send_message(mbox, client, out_msg);
+			prepareViewMsg(&out_msg, connected_svr);
+			send_message(mbox, client, &out_msg, sizeof(Message));
 			logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
 			break;
 			
+  /*   -----------  JOIN REQUEST   -  from user ---------- */
 		case JOIN_MSG :
 
 			/* Create a new join message */
@@ -271,22 +280,19 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 			update_ll_insert_inorder_fromback(&updates, *out_update);
 			
 			/* Send update for a new room */
-      out_msg = malloc (sizeof(Message));
-			prepareJoinMsg(out_msg, jm->room, jm->user, out_update->lts);
-//			jm->lts.pid = out_update->lts.pid;
-//			jm->lts.ts = out_update->lts.ts;
-//			update_message.tag = JOIN_MSG;
-//			strcpy(update_message.payload, &jm);
-			send_message(mbox, server_group, out_msg, sizeof(Message));
+			prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
+			send_message(mbox, server_group, &out_msg, sizeof(Message));
 			
 			break;
 
+/*   -----------  HISTORY REQUEST   -  from user ---------- */
 		case HISTORY_MSG :
 			hm = (HistoryMessage *) mess.payload;
 			logdb("HISTORY Request from user: <%s> on client: <%s>, for room <%s>\n", 
 					hm->user, client, hm->room);
 			break;
 
+/*   -----------  APPEND REQUEST   -  from user ---------- */
 		case APPEND_MSG :
 
 			/*  Create the new chat entry  */
@@ -296,21 +302,20 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 			build_chatEntry(am->user, am->room, am->text);
 
 			/* Save to disk, store in memory, & apply to global state  */
-			//fprintf (....)
+			// TODO:  fprintf (....)
 			update_ll_insert_inorder_fromback(&updates, *out_update);
 			apply_update(out_update);
 			
 			/* Send update for a new chat messge */
-			//TODO: optimize by attached &am to update_message
-      out_msg = malloc (sizeof(Message));
-			prepareAppendMsg(out_msg, am->room, am->user, am->text, out_update->lts);
-//			am->lts.pid = out_update->lts.pid;
-//			am->lts.ts = out_update->lts.ts;
-//			update_message.tag = APPEND_MSG;
-//			strcpy(update_message.payload, am);
-			send_message(mbox, server_group, out_msg, sizeof(Message));
+			prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
+			send_message(mbox, server_group, &out_msg, sizeof(Message));
+      
+      // TODO:  ONLY SEND TO OTHER CLIENTS IN ROOM, am->room
+      send_message(mbox, client_group, &out_msg, sizeof(Message));
+      
 			break;
 
+/*   -----------  LIKE REQUEST   -  from user ---------- */
 		case LIKE_MSG: 
 			lm = (LikeMessage *) mess.payload;
 			logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
@@ -511,15 +516,16 @@ static	void	Run()   {
   }
 
   logdb("----------------------\n");
-  name = strtok(sender, HASHTAG);
-  logdb("Received from %s, name: %s\n", sender, name);
+//  name = strtok(sender, HASHTAG);
+  logdb("Received from %s\n", sender);
 
 
   /*  Processes Message */
   if (Is_regular_mess(service_type))	{
 //    logdb("   The user name is <%s>\n", name);
 //    if (strcmp(target_groups[0], server_group) == 0) {
-    if (name[0] == 's') {
+    if (sender[1] == 's') {
+      name = strtok(sender, HASHTAG);
       // MAY WANT TO CHECK IF ITS OUR MESSAGE & DO SOMETHING DIFFERENT (OR IGNORE IT)
 			if (strcmp(name, server_name[me]) != 0) {
         logdb("  Server Update message. Contents -->: %s\n", (char *) &mess);
@@ -533,7 +539,7 @@ static	void	Run()   {
   }
   /* Process Group membership messages */
   else if(Is_membership_mess(service_type)) {
-
+    name = strtok(sender, HASHTAG);
     /* Re-interpret the fields passed to SP receive */
     changed_group = sender;
     num_members   = num_target_groups;

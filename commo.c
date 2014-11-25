@@ -18,7 +18,7 @@
 #define SERVER_NAME_PREFIX "server-"
 #define SERVER_GROUP_PREFIX	"clients-"
 
-
+static	char * 			HASHTAG = "#";
 
 void join_group (mailbox box, char name[MAX_GROUP_NAME])  {
 	int res;

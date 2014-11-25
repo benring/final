@@ -1,6 +1,8 @@
 
 #include "message.h"
 #include "commo.c"
+#include "chat_ll.h"
+#include "like_ll.h"
 
 
 #define INIT 0
@@ -19,55 +21,176 @@
 
 
 /* Message handling vars */
-static	char		User[USER_NAME_LIMIT];
+static	char		  User[USER_NAME_LIMIT];
 static  char    	Private_group[MAX_GROUP_NAME];
 static  mailbox 	mbox;
-Message				*out_msg;
+static  Message				    *out_msg;
+static  Message           in_msg;
 static	lts_entry		null_lts;
+static	char		  mess[MAX_MESSAGE_SIZE];
 
 
-static	char		server_group[MAX_GROUP_NAME];
-static	char		my_server[MAX_GROUP_NAME];
-static	char		my_room[MAX_GROUP_NAME];
-static	char		server_inbox[MAX_GROUP_NAME];
-static 	char		last_command;
 
-static	int			state;
+
+/*  Client Global State  */
+static	int			  state;
+static	char		  server_group[MAX_GROUP_NAME];
+static	char		  my_server[MAX_GROUP_NAME];
+static	char		  my_room[MAX_GROUP_NAME];
+static	char		  server_inbox[MAX_GROUP_NAME];
+static 	char		  last_command;
+static  chat_ll   chat_room;
+static  int       connected_server[5];
+
 
 void Initialize();
 void Print_menu(); 
 
-void Read_message() {return;}
 
-
-void Receive_welcome_msg() {
-	char		sender[MAX_GROUP_NAME];
-	char		target_groups[5][MAX_GROUP_NAME];
-	int		 	num_members;
-	int		 	service_type;
-	int16		mess_type;
-	int		 	endian_mismatch;
-	int		 	ret;
-	char		mess[MAX_MESSAGE_SIZE];
-
-	do {
-		ret = SP_receive(mbox, &service_type, sender, 100, &num_members, target_groups, 
-				&mess_type, &endian_mismatch, sizeof(mess), (char *) mess );
-		if (ret < 0 )  {
-			SP_error(ret);
-			exit(0);
-		}
-//		logdb("Received from %s. Content is: %s\n", sender, mess);
+void process_server_message() {
+  Message 				*out_msg;
+	AppendMessage 	*am;
+	HistoryMessage 	*hm;
+	LikeMessage 		*lm;
+  ViewMessage     *vm;
+  chat_entry      *ce;
+  chat_info       *ch;
+  int             i;
 	
-	} while (mess[0] != 'W');
-	
-	strcpy(my_server, sender);
-	logdb("My Server is now set to %s\n", my_server);
+	logdb("Received '%c' Update from server\n", in_msg.tag);
+
+  switch (in_msg.tag) {
+
+    /* ---------  APPEND MESSAGE -- FROM: SVR  ------------*/
+    case APPEND_MSG:
+			am = (AppendMessage *) in_msg.payload;
+
+      /*  Do not process a duplicate chat message */
+      if (chat_ll_get_inorder(&chat_room, am->lts)) {
+        return;
+      }
+      
+      /*  Create a new chat entry */
+      ch = malloc(sizeof(chat_info));
+      ch->lts.pid = am->lts.pid;
+      ch->lts.ts = am->lts.ts;
+      ch->likes = like_ll_create();
+      strcpy(ch->chat.user, am->user);
+      strcpy(ch->chat.room, am->room);
+      strcpy(ch->chat.text, am->text);
+
+      logdb("  New chat from server: LTS (%d,%d), User <%s> said '%s'\n", 
+        ch->lts.ts, ch->lts.pid, ch->chat.user, ch->chat.text);
+      
+      /* Append to global chat list  */
+      chat_ll_insert_inorder(&chat_room, *ch);
+      
+      // TODO:  CALL DISPLAY FUNCTION HERE
+    
+      break;  
+      
+   /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/
+    case LIKE_MSG:
+      break;
+
+   /* ---------  VIEW MESSAGE -- FROM: SVR  ------------*/
+    case VIEW_MSG:
+      vm = (ViewMessage *) in_msg.payload;
+      for (i=0; i<5; i++) {
+        connected_server[i] = vm->connected_server[i];
+      }
+      logdb("  Received conn-server status\n");
+      loginfo("CONNECTED servers:  [ ");
+      for (i=0; i<5; i++) {
+        if (vm->connected_server[i]) {
+          loginfo(" <SVR %d>", i+1);
+        }
+      }
+      loginfo("  ]\n");
+      break;
+
+      
+    default:
+      logerr("ERROR! Received a non-update from server\n");
+    }
 }
+
+void process_client_change() {return;}
+
+void Read_message() {
+  char		sender[MAX_GROUP_NAME];
+  char		target_groups[100][MAX_GROUP_NAME];
+  int			num_target_groups;
+  int			service_type;
+  int16		mess_type;
+  int			endian_mismatch;
+  int			ret;
+
+  char*  	changed_group;
+  int    	num_members;
+  char*  	members;
+  char    *name;
+
+  service_type = 0;
+
+  ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
+  	           &mess_type, &endian_mismatch, sizeof(Message), (char *) &in_msg );
+  if (ret < 0 )  {
+    SP_error(ret);
+    exit(0);
+  }
+
+  logdb("----------------------\n");
+  name = strtok(sender, HASHTAG);
+
+  
+  
+  /*  Processes Message -- should only be from our server */
+  if (Is_regular_mess(service_type))	{
+    if (name[0] != 's') {
+      logerr("ERROR! Bad Sender. Message received from %s, name: %s\n", sender, name);
+      return;
+    }
+    logdb("  Server message. Contents -->: %s\n", (char *) &in_msg);
+    process_server_message();
+  }
+
+  /* Process Group membership messages */
+  else if(Is_membership_mess(service_type)) {
+
+    /* Re-interpret the fields passed to SP receive */
+    changed_group = sender;
+    num_members   = num_target_groups;
+    members       = target_groups;
+
+    if (strcmp(changed_group, server_group) == 0) {
+      if (name[0] == 's') {
+        /* Our server is disconnected */
+        logdb("Server, %s, is disconnected")
+        // TODO: Handle a lost server
+      }
+      // OTHERWISE: Ignore, other clients join/leave server's client group
+
+    }
+    else {
+      /* Client has joined/left our room  */
+      process_client_change(num_members, members);
+    }
+  }
+
+  /* Bad message */
+  else {
+    logdb("Received a BAD message\n");
+  }
+  
+  
+  }
 
 
 void Run ()  {
 	
+  
+  
 }
 
 void User_command()   {
@@ -150,11 +273,6 @@ void User_command()   {
 		strcpy(server_inbox, SERVER_NAME_PREFIX);
 		server_inbox[7] = arg[0];
 		
-		/* Block until we get the Server's full private name 
-		 *   OR we could infer it from the membership list, but we 
-		 *   may want to do other stuff when the client first connects */
-//		Receive_welcome_msg();
-
 		state = CONN;
 		// ATTACH FD HERE
 		break;
@@ -226,10 +344,16 @@ void User_command()   {
 		}
 		strcpy(my_room, arg);
 		logdb ("JOIN ROOM: <%s>\n", my_room);
+
+    // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
+      //  function or we need to free the mem)
+    chat_room = chat_ll_create();
+    
 		// SEND JOIN COMMAND TO SERVER 
 		prepareJoinMsg(out_msg, my_room, User, null_lts);
 		logdb("Message contents: <%s>\n", out_msg);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+    
 		state = RUN;
 		
 		break;
@@ -264,18 +388,15 @@ void User_command()   {
 			loginfo("You must be logged in and connected to a server to view connected servers.\n");
 			break;
 		}
-		logdb("Sending view server request to server #%s\n", my_server)
+		logdb("Sending view server request to server, %s\n", server_inbox)
 		
 		out_msg->tag = VIEW_MSG;
-		send_message (mbox, my_server, out_msg, 1);
+		send_message (mbox, server_inbox, out_msg, sizeof(Message));
 		break;
-
-	
 
 	case '?':
 		Print_menu();
 		break;
-
 	
 	default:
 		loginfo("Invalid command. Printing help menu.. \n");

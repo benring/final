@@ -82,14 +82,14 @@ typedef struct LogState {
 
 
 /*  ALl the PREPARE methods to create the new message */
-void prepareViewMsg (Message * m, int * svr) {
+void prepareViewMsg (Message * m, int svr[5]) {
 	ViewMessage *v;
 	int i;
 	
 	m->tag = VIEW_MSG;
 	v = (ViewMessage *) &(m->payload);
 	for (i=0; i<5; i++) {
-		v->connected_server[5] = (svr == 0) ? FALSE : svr[i];
+		v->connected_server[i] = svr[i];
 	}
 }
 
