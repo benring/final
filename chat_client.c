@@ -29,9 +29,6 @@ static  Message           in_msg;
 static	lts_entry		null_lts;
 static	char		  mess[MAX_MESSAGE_SIZE];
 
-
-
-
 /*  Client Global State  */
 static	int			  state;
 static	char		  server_group[MAX_GROUP_NAME];
@@ -45,7 +42,6 @@ static  int       connected_server[5];
 
 void Initialize();
 void Print_menu(); 
-
 
 void process_server_message() {
   Message 				*out_msg;
@@ -85,8 +81,13 @@ void process_server_message() {
       /* Append to global chat list  */
       chat_ll_insert_inorder(&chat_room, *ch);
       
-      // TODO:  CALL DISPLAY FUNCTION HERE
-    
+      /* Trim room to most recent 25 chats */ 
+      while(chat_ll_length(&chat_room) > 25) {
+        chat_ll_remove_first(&chat_room);
+      }
+      
+      chat_ll_print(&chat_room); 
+
       break;  
       
    /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/

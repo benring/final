@@ -47,4 +47,9 @@ chat_info* chat_ll_get_inorder(chat_ll *list, lts_entry lts);
 
 /* Search an ordered list for an lts from the back, terminates early  (assuming list is in order) */
 chat_info* chat_ll_get_inorder_fromback(chat_ll *list, lts_entry lts);
+
+int chat_ll_length(chat_ll *list);
+
+void chat_ll_remove_first(chat_ll *list);
+
 #endif

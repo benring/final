@@ -225,11 +225,14 @@ void apply_update (update * u) {
 		case CHAT:
 			ce = (chat_entry *) &(u->entry);
 			rm = room_ll_get(&rooms, ce->room);
+			// TODO null check?
 			chat_list = &(rm->chats);
-			chat_ll_print(chat_list);
 			if (chat_ll_get_inorder_fromback(chat_list, u->lts) == 0) {
 				apply_chat_update (rm, ce, &(u->lts));
 			}
+			logdb("--- Current state of room: %s -----------\n", rm->name);
+			chat_ll_print(chat_list);
+			logdb("-----------------------------------\n");
 			break;
 			
 		case LIKE:

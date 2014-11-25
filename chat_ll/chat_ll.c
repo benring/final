@@ -28,7 +28,7 @@ void chat_ll_print(chat_ll* list) {
     printf("Contents: \n");
     chat_ll_node* curr = list->first;
     while (curr) {
-      printf("(%d,%d)\n", curr->data.lts.ts, curr->data.lts.pid);
+      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
       curr = curr->next;
     }
   }
@@ -216,4 +216,28 @@ chat_info* chat_ll_get_inorder_fromback(chat_ll* list, lts_entry lts) {
   }
   
   return result;
+}
+
+int chat_ll_length(chat_ll *list) {
+  int len = 0;
+  if (chat_ll_is_empty(list)) {
+    return 0;
+  }
+  
+  chat_ll_node* c = list->first;
+  while (c) {
+    len++;
+    c = c->next;
+  }
+
+  return len;
+}
+
+void chat_ll_remove_first(chat_ll *list) {
+  if (chat_ll_is_empty(list)) {
+    return;
+  }
+  list->first = list->first->next;
+  list->first->prev = 0;
+  return;
 }
