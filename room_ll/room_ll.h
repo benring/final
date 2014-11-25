@@ -4,6 +4,7 @@
 #include "transaction.h"
 #include "chat_ll.h"
 #include "lts_utils.h"
+#include "client_ll.h"
 
 typedef struct room_info {
 	char						name[NAME_LEN];

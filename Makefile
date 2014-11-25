@@ -1,7 +1,7 @@
 CC=gcc
 LD=gcc
 CFLAGS=-g -Wall -fdiagnostics-color=always -O3
-CPPFLAGS=-I. -I/home/cs437/exercises/ex3/include -I./update_ll -I./chat_ll -I./like_ll -I./room_ll
+CPPFLAGS=-I. -I/home/cs437/exercises/ex3/include -I./update_ll -I./chat_ll -I./like_ll -I./room_ll -I ./client_ll
 SP_LIBRARY_DIR=/home/cs437/exercises/ex3
 
 all: chat_server chat_client 
