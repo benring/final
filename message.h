@@ -37,7 +37,7 @@ typedef struct Message {
 } Message;
 
 typedef struct LTSVectorMessage {
-	lts_entry		lts[NUM_SERVERS];
+	lts_entry		lts[MAX_SERVERS];
 } LTS_Vector_Message;
 
 typedef struct JoinMessage {

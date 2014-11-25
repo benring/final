@@ -14,9 +14,10 @@
 /* Common values */
 #define FALSE 0
 #define TRUE 1
-#define NUM_SERVERS 5
 #define NAME_LEN 32
 #define CHAT_LEN 80
+#define MAX_CLIENTS 100
+#define MAX_SERVERS 5
 
 #define	DEBUG 1
 #ifdef  DEBUG

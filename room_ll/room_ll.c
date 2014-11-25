@@ -59,6 +59,7 @@ int room_ll_append(room_ll* list, room_info data) {
     node->prev = old_last;
     list->last = node;
   }
+  
 
   return 1; /* success */
 }

@@ -70,5 +70,15 @@ void send_message(mailbox box, char * group, char * msg, int len)   {
 }
 
 
+int is_client_in_list(char *cli, int list_len, char cli_list[MAX_CLIENTS][MAX_GROUP_NAME]) {
+  int i;
+  for(i=0; i<list_len; i++) {
+    if(strcmp(cli, cli_list[i]) == 0) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 
 #endif

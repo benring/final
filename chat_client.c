@@ -3,6 +3,7 @@
 #include "commo.c"
 #include "chat_ll.h"
 #include "like_ll.h"
+#include "client_ll.h"
 
 
 #define INIT 0
@@ -37,7 +38,8 @@ static  char      my_room_distrolist[MAX_GROUP_NAME];
 static	char		  server_inbox[MAX_GROUP_NAME];
 static 	char		  last_command;
 static  chat_ll   chat_room;
-static  int       connected_server[5];
+static  client_ll attendees;
+static  int       connected_server[MAX_SERVERS];
 static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
 
 
@@ -98,12 +100,12 @@ void process_server_message() {
    /* ---------  VIEW MESSAGE -- FROM: SVR  ------------*/
     case VIEW_MSG:
       vm = (ViewMessage *) in_msg.payload;
-      for (i=0; i<5; i++) {
+      for (i=0; i<MAX_SERVERS; i++) {
         connected_server[i] = vm->connected_server[i];
       }
       logdb("  Received conn-server status\n");
       loginfo("CONNECTED servers:  [ ");
-      for (i=0; i<5; i++) {
+      for (i=0; i<MAX_SERVERS; i++) {
         if (vm->connected_server[i]) {
           loginfo(" <SVR %d>", i+1);
         }
@@ -117,7 +119,35 @@ void process_server_message() {
     }
 }
 
-void process_client_change() {return;}
+void process_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
+  client_info   *new_client;
+  client_ll_node *curr = attendees.first;
+  int i;
+  
+  
+  while (curr) {
+    if (!is_client_in_list(curr->data.name, num_members, members)) {
+      printf("Client %s has LEFT the room \n", curr->data.name);
+      client_ll_remove(&attendees, curr->data.name);    
+    }
+    curr = curr->next;
+  }
+
+  /* Check for additions */
+  for(i=0; i< num_members; i++) {
+    if(!client_ll_get(&attendees, members[i])) {
+      new_client = malloc(sizeof(client_info));
+      strcpy(new_client->name, members[i]);
+      
+      // TODO: Update with unique users
+      strcpy(new_client->user, members[i]);
+      strcpy(new_client->room, my_room);      
+      printf("Client %s has JOINED the room \n", members[i]);
+      client_ll_append(&attendees, *new_client);
+    }
+  }  
+  
+}
 
 void Read_message() {
   char		sender[MAX_GROUP_NAME];
@@ -182,9 +212,7 @@ void Read_message() {
   else {
     logdb("Received a BAD message\n");
   }
-  
-  
-  }
+}
 
 
 void User_command()   {
@@ -248,7 +276,7 @@ void User_command()   {
       my_server = -1;
     // TODO:  Any other disconn logic goes here
     }
-    my_server = atoi(arg[0]) - 1;
+    my_server = atoi(arg) - 1;
 
     
 		logdb ("CONNECT to Server <%s>\n", arg);

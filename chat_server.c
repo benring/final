@@ -21,7 +21,6 @@ float 			time_diff (struct timeval s, struct timeval e);
 void 		build_roomEntry (char * r);
 void 		build_chatEntry (char * u, char * r, char * t);
 void 		build_likeEntry (char * u, lts_entry e, char a);
-int 		is_client_in_list(char *cli, int list_len, char cli_list[5][MAX_GROUP_NAME]);
 
 /* Message handling vars */
 static	char			User[80];
@@ -33,14 +32,14 @@ static	Message			update_message;
 /* Protocol vars  */
 static 	unsigned int		me;
 static  char    		my_server_id;
-static  char				server_name[5][MAX_GROUP_NAME];
+static  char				server_name[MAX_SERVERS][MAX_GROUP_NAME];
 static	char				server_group[MAX_GROUP_NAME];
 static	char				client_group[MAX_GROUP_NAME];
 
 
 /*  Server Chat State  */
 static	int					my_state;
-static  int		        	connected_svr[5];
+static  int		        	connected_svr[MAX_SERVERS];
 static	unsigned int		lts;
 static  room_ll				rooms;
 static	update_ll			updates;
@@ -90,12 +89,12 @@ int main (int argc, char *argv[])  {
 
 #include "utils.h"
 
-void handle_server_change(int num_members, char members[5][MAX_GROUP_NAME]) {
+void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   Message out_msg;
   /* Re-compute the connected server list */
-  int new_connected_svr[5];
+  int new_connected_svr[MAX_SERVERS];
   int i;
-  for (i=0; i<5; i++) {
+  for (i=0; i<MAX_SERVERS; i++) {
     new_connected_svr[i] = FALSE;
   }
 
@@ -106,7 +105,7 @@ void handle_server_change(int num_members, char members[5][MAX_GROUP_NAME]) {
   }
 
   /* Compare to previous members */
-  for (i=0; i<5; i++) {
+  for (i=0; i<MAX_SERVERS; i++) {
     int diff = new_connected_svr[i] - connected_svr[i];
     if (diff != 0) {
       int joined = FALSE;
@@ -148,7 +147,7 @@ void handle_server_change(int num_members, char members[5][MAX_GROUP_NAME]) {
 }
 
 
-void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
+void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   int i;
   client_info new_client;
   /* Check for removals */
@@ -176,22 +175,29 @@ void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
  *  current global state  */
 
 void apply_room_update (char * name)  {
-			room_info		*new_room;
+			room_info		*new_room, *rm;
       char        distrolist[MAX_GROUP_NAME];
+      chat_ll   *chat_list;
+      
 	
 			/*  If this is a new room, create it & add to room list */
 			if (room_ll_get(&rooms, name) == 0) {
 				new_room = malloc (sizeof(room_info));
 				strcpy(new_room->name, name);
 				new_room->chats = chat_ll_create();
+        new_room->attendees = client_ll_create();
+        distrolist[0] = my_server_id;
+        strcpy(&distrolist[1], name);
+        strcpy(new_room->distro_group, distrolist);
+
 				room_ll_append(&rooms, *new_room);
 				logdb("NEW ROOM created, <%s>\n", new_room->name);
         
     /*  Server JOINs 2 groups for a room:
      *    1. Spread Distro group for to send updates to clients in the room
-     *    2. Spread Membership group for attendees  */		
-        distrolist[0] = my_server_id;
-        strcpy(&distrolist[1], name);
+     *    2. Spread Membership group for attendees  */
+		
+        logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
         join_group(mbox, distrolist);
         join_group(mbox, name);
       }
@@ -202,6 +208,7 @@ void apply_room_update (char * name)  {
 
 
 void apply_chat_update (room_info *rm, chat_entry * ce, lts_entry * ts) {
+  Message     out_msg;
 	chat_info		new_chat;
 	chat_ll			*chat_list;
 	
@@ -218,6 +225,11 @@ void apply_chat_update (room_info *rm, chat_entry * ce, lts_entry * ts) {
 		new_chat.chat.room, new_chat.lts.ts, new_chat.lts.pid, new_chat.chat.user, new_chat.chat.text);
 
 	chat_ll_insert_inorder_fromback(chat_list, new_chat);
+  
+    //  TODO:  SHOULD ONLY SEND TO CLIENTS IN THIS ROOM 
+  // We will need a search_client_list(room_name) function
+  prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
+  send_message(mbox, rm->distro_group, &out_msg, sizeof(Message));
 
 }
 
@@ -244,12 +256,12 @@ void apply_update (update * u) {
 			rm = room_ll_get(&rooms, ce->room);
 			// TODO null check?
 			chat_list = &(rm->chats);
+      if (!chat_list) {
+        logdb("ERROR! Chat list does not exist for this room\n");
+      }
 			if (chat_ll_get_inorder_fromback(chat_list, u->lts) == 0) {
 				apply_chat_update (rm, ce, &(u->lts));
 			}
-			logdb("--- Current state of room: %s -----------\n", rm->name);
-			chat_ll_print(chat_list);
-			logdb("-----------------------------------\n");
 			break;
 			
 		case LIKE:
@@ -329,9 +341,6 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 			/* Send update for a new chat messge */
 			prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
 			send_message(mbox, server_group, &out_msg, sizeof(Message));
-      
-      // TODO:  ONLY SEND TO OTHER CLIENTS IN ROOM, am->room
-      send_message(mbox, client_group, &out_msg, sizeof(Message));
       
 			break;
 
@@ -415,14 +424,6 @@ void handle_server_update() {
       update_ll_insert_inorder_fromback(&updates, *new_update);
       apply_update(new_update);
       
-      /*  Create and send to clients */
-
-  //  TODO:  SHOULD ONLY SEND TO CLIENTS IN THIS ROOM 
-      // We will need a search_client_list(room_name) function
-      out_msg = malloc (sizeof(Message));
-			prepareAppendMsg(out_msg, am->room, am->user, am->text, new_update->lts);
-      send_message(mbox, client_group, out_msg, sizeof(Message));
-    
       break;  
       
    /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/
@@ -442,7 +443,7 @@ void Initialize (char * server_index) {
   int    serverid;
 
   /* Parse server's index  -- Elaborate to reduce 0/1 indexing confusion */
-  my_server_id = server_index;
+  my_server_id = server_index[0];
   serverid = atoi(server_index);
   index = (char)(serverid + (int)'0');
 
@@ -461,7 +462,7 @@ void Initialize (char * server_index) {
 
   /* Record the name of each server's group */
   /* Register servers as not connected */
-  for (i=0; i<5; i++) {
+  for (i=0; i<MAX_SERVERS; i++) {
     strcpy(server_name[i], "server-");
     server_name[i][7] = (char)(1 + i + (int)'0');
     connected_svr[i] = FALSE;
@@ -515,8 +516,7 @@ void build_likeEntry (char * u, lts_entry e, char a) {
 
 static	void	Run()   {
   char		sender[MAX_GROUP_NAME];
-  // TODO should this be more than 5? for connected clients in a group
-  char		target_groups[5][MAX_GROUP_NAME];
+  char		target_groups[MAX_CLIENTS][MAX_GROUP_NAME];
   int			num_target_groups;
   int			service_type;
   int16		mess_type;
@@ -571,8 +571,11 @@ static	void	Run()   {
     if (strcmp(changed_group, server_group) == 0) {
       handle_server_change(num_members, members);
     }
-    else {
+    else if (strcmp(changed_group, client_group) == 0) {
       handle_client_change(num_members, members);
+    }
+    else {
+      logdb ("Group change on <%s>\n", changed_group);
     }
   }
 
@@ -583,15 +586,7 @@ static	void	Run()   {
 
 }
 
-int is_client_in_list(char *cli, int list_len, char cli_list[5][MAX_GROUP_NAME]) {
-  int i;
-  for(i=0; i<list_len; i++) {
-    if(strcmp(cli, cli_list[i]) == 0) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
+
 
 
 /*  OTHER HELPER function (for timing) */
