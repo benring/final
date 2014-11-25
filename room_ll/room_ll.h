@@ -7,7 +7,9 @@
 
 typedef struct room_info {
 	char						name[NAME_LEN];
-	char						spread_group[NAME_LEN];
+	char                                            distro_group[NAME_LEN];
+	char						attendee_group[NAME_LEN];
+	client_ll                               attendees;
 	chat_ll					chats;
 } room_info;
 
