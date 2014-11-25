@@ -45,7 +45,7 @@ static	unsigned int		lts;
 static  room_ll				rooms;
 static	update_ll			updates;
 
-static  char            	connected_clients[20][MAX_GROUP_NAME];  //FOR NOW
+static  client_ll               connected_clients;
 static  int             	num_connected_clients = 0;
 
 static	update				*out_update;
@@ -150,17 +150,20 @@ void handle_server_change(int num_members, char members[5][MAX_GROUP_NAME]) {
 
 void handle_client_change(int num_members, char members[5][MAX_GROUP_NAME]) {
   int i;
+  client_info new_client;
   /* Check for removals */
-  for (i=0; i<num_connected_clients; i++) {
-    if (!is_client_in_list(connected_clients[i], num_members, members)) {
-      printf("Client %s has disconnected from the server! \n", connected_clients[i]);
-      remove_client(i);
+  client_ll_node *curr = connected_clients.first;
+  while (curr) {
+    if (!is_client_in_list(curr->data.name, num_members, members)) {
+      printf("Client %s has disconnected from the server! \n", curr->data.name);
+      remove_client(curr->data.name);
     }
+    curr = curr->next;
   }
 
   /* Check for additions */
   for(i=0; i< num_members; i++) {
-    if(!is_client_in_list(members[i], num_connected_clients, connected_clients)) {
+    if(!client_ll_get(&connected_clients, members[i])) {
       printf("Client %s has connected to the server! \n", members[i]);
       add_client(members[i]);
     }
@@ -466,6 +469,7 @@ void Initialize (char * server_index) {
   
   /* Do other program initialization */
   updates = update_ll_create();
+  connected_clients = client_ll_create();
   lts = 0;
 
   update_message.tag = UPDATE;
