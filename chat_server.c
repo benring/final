@@ -175,35 +175,35 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
  *  current global state  */
 
 void apply_room_update (char * name)  {
-			room_info		*new_room, *rm;
-      char        distrolist[MAX_GROUP_NAME];
-      chat_ll   *chat_list;
-      
-	
-			/*  If this is a new room, create it & add to room list */
-			if (room_ll_get(&rooms, name) == 0) {
-				new_room = malloc (sizeof(room_info));
-				strcpy(new_room->name, name);
-				new_room->chats = chat_ll_create();
-        new_room->attendees = client_ll_create();
-        distrolist[0] = my_server_id;
-        strcpy(&distrolist[1], name);
-        strcpy(new_room->distro_group, distrolist);
-
-				room_ll_append(&rooms, *new_room);
-				logdb("NEW ROOM created, <%s>\n", new_room->name);
-        
+  room_info   new_room, *rm;
+  char        distrolist[MAX_GROUP_NAME];
+  chat_ll    *chat_list;
+  
+  /*  If this is a new room, create it & add to room list */
+  if (room_ll_get(&rooms, name) == 0) {
+    /* Build room_info */
+    strcpy(new_room.name, name);
+    new_room.chats = chat_ll_create();
+    new_room.attendees = client_ll_create();
+    distrolist[0] = my_server_id;
+    strcpy(&distrolist[1], name);
+    strcpy(new_room.distro_group, distrolist);
+  
+    /* Append to room list */
+    room_ll_append(&rooms, new_room);
+    logdb("NEW ROOM created, <%s>\n", new_room.name);
+          
     /*  Server JOINs 2 groups for a room:
      *    1. Spread Distro group for to send updates to clients in the room
      *    2. Spread Membership group for attendees  */
-		
-        logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
-        join_group(mbox, distrolist);
-        join_group(mbox, name);
-      }
-			else {
-				logdb("Room '%s' already exists", new_room->name);
-			}
+    	
+    logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
+    join_group(mbox, distrolist);
+    join_group(mbox, name);
+  }
+  else {
+    logdb("Room '%s' already exists", name);
+  }
 }
 
 
