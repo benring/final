@@ -124,17 +124,16 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
   /*  Send updated list of connected servers to all clients  */
   prepareViewMsg(&out_msg, connected_svr);
-  send_message(mbox, client_group, &out_msg, sizeof(Message));
+  send_message(mbox, client_group, (char *) &out_msg, sizeof(Message));
   logdb("Sending updated list of servers to all clients\n");
 
   /* TODO reconcie! */
+  Reconcile();
 }
 
 /* Update the list of connected clients */
 void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   int i;
-  client_info new_client;
-  
   /* Check for removals */
   client_ll_node *curr = connected_clients.first;
   while (curr) {
@@ -160,9 +159,8 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
  *  current global state  */
 
 void apply_room_update (char * name)  {
-  room_info   new_room, *rm;
   char        distrolist[MAX_GROUP_NAME];
-  chat_ll    *chat_list;
+  room_info   new_room;
   
   /*  If this is a new room, create it & add to room list */
   if (room_ll_get(&rooms, name) == 0) {
@@ -225,13 +223,12 @@ void apply_chat_update (chat_entry * ce, lts_entry * ts) {
   
   /* Send a message to the distro group for this room */ 
   prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
-  send_message(mbox, rm->distro_group, &out_msg, sizeof(Message));
+  send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
 }
 
 void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
   update      *mu;
   chat_entry  *ce;
-  like_entry  *le;
   room_info   *rm;
   chat_ll     *chat_list;
   chat_info   *ch;
@@ -276,11 +273,6 @@ void apply_update (update * u) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
-  room_info   *rm;
-  chat_ll     *chat_list;
-  like_ll     *like_list;
-  like_entry  *new_like;
-  chat_info   *ch;
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -332,7 +324,7 @@ void send_history_to_client(char *roomname, char *client) {
   while(curr_chat_node) {
     chat = &(curr_chat_node->data);
     prepareAppendMsg(&out_msg, chat->chat.room, chat->chat.user, chat->chat.text, chat->lts);
-    send_message(mbox, client, &out_msg, sizeof(Message));
+    send_message(mbox, client, (char *) &out_msg, sizeof(Message));
        
         // TODO send likes!
         /*  
@@ -354,17 +346,14 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
   AppendMessage  *am;
   HistoryMessage *hm;
   LikeMessage 	 *lm;
-  chat_ll_node   *curr_chat;
-  chat_info      *new_chat;
-  room_info      *new_room;
-
+  
   logdb("Client Request:  %c\n", mess.tag);
 	
   switch (mess.tag) {
     case VIEW_MSG :
       /* Send the connected_servers to the client */
       prepareViewMsg(&out_msg, connected_svr);
-      send_message(mbox, client, &out_msg, sizeof(Message));
+      send_message(mbox, client, (char *)&out_msg, sizeof(Message));
       logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
       break;
 		
@@ -381,7 +370,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       build_roomEntry(jm->room);
       apply_update(out_update);
       prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
-      send_message(mbox, server_group, &out_msg, sizeof(Message));
+      send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       send_history_to_client(jm->room, client);
       break;
 
@@ -392,7 +381,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       build_chatEntry(am->user, am->room, am->text);
       apply_update(out_update);
       prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
-      send_message(mbox, server_group, &out_msg, sizeof(Message));
+      send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       break;
 
     case LIKE_MSG: 
@@ -403,7 +392,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       build_likeEntry(lm->user, lm->ref, lm->action);
       apply_update(out_update);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
-      send_message(mbox, server_group, &out_msg, sizeof(Message));
+      send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       break;
 
     default:
@@ -414,12 +403,11 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 }
 
 void handle_server_update() {
-  Message        *out_msg;
   update         new_update;
   JoinMessage    *jm;
   AppendMessage  *am;
-  HistoryMessage *hm;
-  LikeMessage 	 *lm;
+  //HistoryMessage *hm;
+  //LikeMessage 	 *lm;
   chat_entry     *ce;
 	
   logdb("Received '%c' Update from server\n", mess.tag);
@@ -555,10 +543,6 @@ static	void	Run()   {
 
   char		*name;
 
-  char*  	changed_group;
-  int    	num_members;
-  char*  	members;
-
   service_type = 0;
 
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
@@ -594,18 +578,18 @@ static	void	Run()   {
   else if(Is_membership_mess(service_type)) {
     name = strtok(sender, HASHTAG);
     /* Re-interpret the fields passed to SP receive */
-    changed_group = sender;
-    num_members   = num_target_groups;
-    members       = target_groups;
+    //changed_group = sender;
+    //num_members   = num_target_groups;
+    //members       = target_groups;
 
-    if (strcmp(changed_group, server_group) == 0) {
-      handle_server_change(num_members, members);
+    if (strcmp(sender, server_group) == 0) {
+      handle_server_change(num_target_groups, target_groups);
     }
-    else if (strcmp(changed_group, client_group) == 0) {
-      handle_client_change(num_members, members);
+    else if (strcmp(sender, client_group) == 0) {
+      handle_client_change(num_target_groups, target_groups);
     }
     else {
-      logdb ("Group change on <%s>\n", changed_group);
+      logdb ("Group change on <%s>\n", sender);
     }
   }
 
