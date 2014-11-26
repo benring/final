@@ -140,7 +140,7 @@ void process_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_
       printf("Client %s has LEFT the room \n", curr->data.name);
       client_ll_remove(&attendees, curr->data.name);    
       // TODO:  Convert to just user name (joe vs 101joe)
-      strcpy(client_name, new_client->name);
+      strcpy(client_name, curr->data.name);
       user = strtok(client_name, HASHTAG);
       if (user[0] != 's') {
         name_ll_remove(&displayed_attendees, &user[3]);
