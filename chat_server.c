@@ -206,10 +206,21 @@ void apply_room_update (char * name)  {
   }
 }
 
-void apply_chat_update (room_info *rm, chat_entry * ce, lts_entry * ts) {
+void apply_chat_update (chat_entry * ce, lts_entry * ts) {
   Message   out_msg;
   chat_info new_chat;
   chat_ll   *chat_list;
+  room_info *rm; 
+
+  /* Grab the room associated with this chat */
+  rm = room_ll_get(&rooms, ce->room);
+    
+  /* Grab the list of chats for the room */
+  chat_list = &(rm->chats);
+  if (!chat_list) {
+    logdb("ERROR! Chat list does not exist for this room\n");
+    exit(1);
+  }
  
   /* Create and populte new chat_info */
   chat_list = &(rm->chats);
@@ -277,12 +288,11 @@ void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char actio
 }
 
 void apply_update (update * u) {
-	
-	room_entry	*re;
-	chat_entry  *ce;
+  room_entry  *re;
+  chat_entry  *ce;
   like_entry  *le;
-	room_info		*rm;
-	chat_ll			*chat_list;
+  room_info   *rm;
+  chat_ll     *chat_list;
   like_ll     *like_list;
   like_entry  *new_like;
   chat_info   *ch;
@@ -291,37 +301,31 @@ void apply_update (update * u) {
   if (u->lts.ts > lts)  {
     lts = u->lts.ts;
   }
-  
-	switch (u->tag)  {
-		case ROOM: 
-			re = (room_entry *) &(u->entry);
-			apply_room_update (re->room);
-			break;
-			
-		case CHAT:
-			ce = (chat_entry *) &(u->entry);
-			rm = room_ll_get(&rooms, ce->room);
-			// TODO null check?
-			chat_list = &(rm->chats);
-      if (!chat_list) {
-        logdb("ERROR! Chat list does not exist for this room\n");
-      }
-			if (chat_ll_get_inorder_fromback(chat_list, u->lts) == 0) {
-				apply_chat_update (rm, ce, &(u->lts));
-			}
-			break;
-			
-		case LIKE:
-			le = (like_entry *) &(u->entry);
-			// TODO check if update already exists?
-			apply_like_update(le->lts, u->lts, le->user, le->action);
+
+  /* Do not process any duplicate updates EVER */
+  if (update_ll_get_inorder_fromback(&updates, u->lts)) {
+    logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
+  }
+
+  switch (u->tag)  {
+    case ROOM: 
+      re = (room_entry *) &(u->entry);
+      apply_room_update (re->room);
+      break;
 		
-			break;
+    case CHAT:
+      ce = (chat_entry *) &(u->entry);
+      apply_chat_update (ce, &(u->lts));
+      break;
 			
-		default:
-			logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
-	}
-	
+    case LIKE:
+      le = (like_entry *) &(u->entry);
+      apply_like_update(le->lts, u->lts, le->user, le->action);
+      break;
+		
+    default:
+      logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
+    }
 }
 
 void handle_client_command(char client[MAX_GROUP_NAME]) {
