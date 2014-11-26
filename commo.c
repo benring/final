@@ -80,5 +80,11 @@ int is_client_in_list(char *cli, int list_len, char cli_list[MAX_CLIENTS][MAX_GR
   return FALSE;
 }
 
+char * get_user_name (char spread_name[MAX_GROUP_NAME])  {
+  char * name = (char *) malloc(MAX_GROUP_NAME);
+  memcpy(name, spread_name, strlen(spread_name));
+  name = strtok(name, HASHTAG);
+}
+
 
 #endif

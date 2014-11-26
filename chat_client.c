@@ -4,6 +4,7 @@
 #include "chat_ll.h"
 #include "like_ll.h"
 #include "client_ll.h"
+#include "name_ll.h"
 
 
 #define INIT 0
@@ -39,12 +40,22 @@ static	char		  server_inbox[MAX_GROUP_NAME];
 static 	char		  last_command;
 static  chat_ll   chat_room;
 static  client_ll attendees;
+static  name_ll   displayed_attendees;
 static  int       connected_server[MAX_SERVERS];
 static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
 
 
 void Initialize();
 void Print_menu(); 
+
+void display() {
+  if (state > CONN) {
+      logdb("Attendees");
+      name_ll_print(&displayed_attendees);
+  }
+ 	printf("%s>", &User[3]);
+
+}
 
 void process_server_message() {
   Message 				*out_msg;
@@ -121,12 +132,19 @@ void process_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_
   client_info   *new_client;
   client_ll_node *curr = attendees.first;
   int i;
-  
+  char *user;
+  char client_name[MAX_GROUP_NAME];
   
   while (curr) {
     if (!is_client_in_list(curr->data.name, num_members, members)) {
       printf("Client %s has LEFT the room \n", curr->data.name);
       client_ll_remove(&attendees, curr->data.name);    
+      // TODO:  Convert to just user name (joe vs 101joe)
+      strcpy(client_name, new_client->name);
+      user = strtok(client_name, HASHTAG);
+      if (user[0] != 's') {
+        name_ll_remove(&displayed_attendees, &user[3]);
+      }
     }
     curr = curr->next;
   }
@@ -142,8 +160,15 @@ void process_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_
       strcpy(new_client->room, my_room);      
       printf("Client %s has JOINED the room \n", members[i]);
       client_ll_append(&attendees, *new_client);
+      // TODO:  Convert to just user name (joe vs 101joe)
+      strcpy(client_name, new_client->name);
+      user = strtok(client_name, HASHTAG);
+      if (user[0] != 's') {
+        name_ll_insert(&displayed_attendees, &user[3]);
+      }
     }
   }  
+  
   
 }
 
@@ -163,6 +188,10 @@ void Read_message() {
 
   service_type = 0;
 
+  fflush(stdout);
+  logdb("----------------------\n");
+	display();
+
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
   	           &mess_type, &endian_mismatch, sizeof(Message), (char *) &in_msg );
   if (ret < 0 )  {
@@ -170,7 +199,6 @@ void Read_message() {
     exit(0);
   }
 
-  logdb("----------------------\n");
   name = strtok(sender, HASHTAG);
   
   /*  Processes Message -- should only be from our server */
@@ -210,6 +238,7 @@ void Read_message() {
   else {
     logdb("Received a BAD message\n");
   }
+
 }
 
 
@@ -222,8 +251,7 @@ void User_command()   {
 	
 	lts_entry	ref;
 
-	printf("%s>", User);
-	
+  
 	for( i=0; i < sizeof(command); i++ ) command[i] = 0;
 	if( fgets( command, 100, stdin ) == NULL ) 
 		disconn_spread(mbox);
@@ -462,6 +490,7 @@ void User_command()   {
 		loginfo("Invalid command. Printing help menu.. \n");
 		Print_menu();
 	}
+
 }
 
 
@@ -476,6 +505,8 @@ int main (int argc, char *argv[])  {
 	Initialize();
 	
 	while (state < CONN) {
+  	printf("%s>", &User[3]);
+
 		User_command();
 	}
 	
