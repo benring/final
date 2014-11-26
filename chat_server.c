@@ -414,81 +414,57 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 }
 
 void handle_server_update() {
-	Message 				*out_msg;
-	update 		      *new_update;
-	JoinMessage 		*jm;
-	AppendMessage 	*am;
-	HistoryMessage 	*hm;
-	LikeMessage 		*lm;
-  chat_entry      *ce;
+  Message        *out_msg;
+  update         new_update;
+  JoinMessage    *jm;
+  AppendMessage  *am;
+  HistoryMessage *hm;
+  LikeMessage 	 *lm;
+  chat_entry     *ce;
 	
-	logdb("Received '%c' Update from server\n", mess.tag);
+  logdb("Received '%c' Update from server\n", mess.tag);
 
   switch (mess.tag) {
-
-    /* ---------  JOIN MESSAGE -- FROM: SVR  ------------*/
     case JOIN_MSG:
-			jm = (JoinMessage *) mess.payload;
+      /* Build and appy the update */
+      jm = (JoinMessage *) mess.payload;
 
-      /*  Do not process a duplicate Update entry */
-      if (update_ll_get_inorder_fromback(&updates, jm->lts)) {
-        return;
-      }
-      
-      /*  Create a new data log entry */
-      new_update = malloc (sizeof(update));
-      new_update->tag = ROOM;
-      new_update->lts.pid = jm->lts.pid;
-      new_update->lts.ts = jm->lts.ts;
-      strcpy(new_update->entry, jm->room);
+      new_update.tag = ROOM;
+      new_update.lts.pid = jm->lts.pid;
+      new_update.lts.ts = jm->lts.ts;
+      strcpy(new_update.entry, jm->room);
       
       logdb("  New Room <%s> from server group\n", jm->room);
-      
-      /* Save to disk, store in memory, & apply to global state  */
-      // fprintf (...)
-      update_ll_insert_inorder_fromback(&updates, *new_update);
-      apply_update(new_update);
-      
+      apply_update(&new_update);
       break;
       
-    /* ---------  APPEND MESSAGE -- FROM: SVR  ------------*/
     case APPEND_MSG:
-			am = (AppendMessage *) mess.payload;
+      /* Build and apply the update */
+      am = (AppendMessage *) mess.payload;
 
-      /*  Do not process a duplicate Update entry */
-      if (update_ll_get_inorder_fromback(&updates, am->lts)) {
-        return;
-      }
-      
       /*  Create a new data log entry */
-      new_update = malloc (sizeof(update));
-      new_update->tag = CHAT;
-      new_update->lts.pid = am->lts.pid;
-      new_update->lts.ts = am->lts.ts;
+      new_update.tag = CHAT;
+      new_update.lts.pid = am->lts.pid;
+      new_update.lts.ts = am->lts.ts;
       
-      ce = (chat_entry *) &(new_update->entry);
+      ce = (chat_entry *) &(new_update.entry);
       strcpy(ce->user, am->user);
       strcpy(ce->room, am->room);
       strcpy(ce->text, am->text);
 
-      logdb("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update->lts.ts, new_update->lts.pid);
-      
-      /* Save to disk, store in memory, & apply to global state  */
-      // fprintf (...)
-      update_ll_insert_inorder_fromback(&updates, *new_update);
-      apply_update(new_update);
+      logdb("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
+      apply_update(&new_update);
       
       break;  
       
-   /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/
     case LIKE_MSG:
+      // TODO handle a like msg!
       break;
       
     default:
       logerr("ERROR! Received a non-update from server\n");
-    }
-
-	
+      exit(1);
+  }
 }
 
 void Initialize (char * server_index) {
