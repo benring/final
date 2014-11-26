@@ -206,33 +206,75 @@ void apply_room_update (char * name)  {
   }
 }
 
-
 void apply_chat_update (room_info *rm, chat_entry * ce, lts_entry * ts) {
-  Message     out_msg;
-	chat_info		new_chat;
-	chat_ll			*chat_list;
-	
-	chat_list = &(rm->chats);
-	
-	strcpy(new_chat.chat.user, ce->user);
-	strcpy(new_chat.chat.text, ce->text);
-	strcpy(new_chat.chat.room, ce->room);
-	new_chat.lts.pid = ts->pid;
-	new_chat.lts.ts = ts->ts;
-	new_chat.likes = like_ll_create();
-	
-	logdb("New Chat created for room <%s>: (%d,%d), User <%s> said '%s'\n", 
-		new_chat.chat.room, new_chat.lts.ts, new_chat.lts.pid, new_chat.chat.user, new_chat.chat.text);
-
-	chat_ll_insert_inorder_fromback(chat_list, new_chat);
+  Message   out_msg;
+  chat_info new_chat;
+  chat_ll   *chat_list;
+ 
+  /* Create and populte new chat_info */
+  chat_list = &(rm->chats);
   
-    //  TODO:  SHOULD ONLY SEND TO CLIENTS IN THIS ROOM 
-  // We will need a search_client_list(room_name) function
+  strcpy(new_chat.chat.user, ce->user);
+  strcpy(new_chat.chat.text, ce->text);
+  strcpy(new_chat.chat.room, ce->room);
+  new_chat.lts.pid = ts->pid;
+  new_chat.lts.ts = ts->ts;
+  new_chat.likes = like_ll_create();
+  
+  logdb("New Chat created for room <%s>: (%d,%d), User <%s> said '%s'\n", 
+  	new_chat.chat.room, new_chat.lts.ts, new_chat.lts.pid, new_chat.chat.user, new_chat.chat.text);
+  
+  /* Append to chat list for this room */
+  chat_ll_insert_inorder_fromback(chat_list, new_chat);
+  
+  /* Send a message to the distro group for this room */ 
   prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
   send_message(mbox, rm->distro_group, &out_msg, sizeof(Message));
-
 }
 
+void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
+  update      *mu;
+  chat_entry  *ce;
+  like_entry  *le;
+  room_info   *rm;
+  chat_ll     *chat_list;
+  chat_info   *ch;
+  like_ll     *like_list;
+  like_entry  new_like;
+  
+  /* Grab the original chat update referenced by the like */
+  mu = update_ll_get_inorder(&updates, ref);
+  if (mu->tag != CHAT) {
+    logerr("ERROR! Reference to non-chat update\n");
+    exit(1);
+  }
+
+  /* Determine the room associated with the chat being liked */
+  ce = (chat_entry *) &(mu->entry);
+  rm = room_ll_get(&rooms, ce->room);
+  
+  /* Grab the list of chats for the room */ 
+  chat_list = &(rm->chats);
+  if (!chat_list) {
+    logdb("ERROR! Chat list does not exist for this room\n");
+    exit(1); 
+  }
+
+  /* Grab the chat_info and update its like list */
+  ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
+  like_list = &(ch->likes);
+
+  if (like_ll_get_inorder_fromback(like_list, like_lts) == 0) {
+    /* Build the new like */
+    strcpy(new_like.user, user);
+    new_like.action = action;
+    new_like.lts = like_lts;
+
+    /* insert it to the like list */
+    like_ll_insert_inorder_fromback(like_list, new_like);
+    like_ll_print(like_list);
+  }
+}
 
 void apply_update (update * u) {
 	
@@ -244,7 +286,6 @@ void apply_update (update * u) {
   like_ll     *like_list;
   like_entry  *new_like;
   chat_info   *ch;
-  update      *mu;
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -272,38 +313,8 @@ void apply_update (update * u) {
 			
 		case LIKE:
 			le = (like_entry *) &(u->entry);
-
-      mu = update_ll_get_inorder(&updates, le->lts);
-      if (mu->tag != CHAT) {
-        logerr("ERROR! Reference to non-chat update\n");
-        return;
-      }
-      
-      ce = (chat_entry *) &(mu->entry);
-			rm = room_ll_get(&rooms, ce->room);
-			chat_list = &(rm->chats);
-      if (!chat_list) {
-        logdb("ERROR! Chat list does not exist for this room\n");
-        return;
-      }
-      
-
-      
-      ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
-      like_list = &(ch->likes);
-
-			if (like_ll_get_inorder_fromback(like_list, u->lts) == 0) {
-          new_like = malloc (sizeof(like_entry));
-          strcpy(new_like->user, le->user);
-          new_like->action = le->action;
-        
-          /*  new_like takes the 'update' LTS to serialize the like in the LL */
-          new_like->lts.pid = u->lts.pid;
-          new_like->lts.ts = u->lts.ts;
-//				apply_chat_update (rm, ce, &(u->lts));
-          like_ll_insert_inorder(like_list, *new_like);
-          like_ll_print(like_list);
-			}
+			// TODO check if update already exists?
+			apply_like_update(le->lts, u->lts, le->user, le->action);
 		
 			break;
 			
@@ -408,7 +419,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 		case LIKE_MSG: 
 			lm = (LikeMessage *) mess.payload;
 			logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
-			logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->lts.ts, lm->lts.pid);
+			logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
 
 			build_likeEntry(lm->user, lm->ref, lm->action);
 
