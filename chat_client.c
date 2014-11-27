@@ -200,6 +200,7 @@ void process_client_change(int num_members,
       client_ll_remove(&attendees, curr->data.name);    
 
       /*  Process unique usernames only */
+      // TODO:  Convert to just user name (joe vs 101joe)
       strcpy(client_name, curr->data.name);
       user = strtok(client_name, HASHTAG);
       

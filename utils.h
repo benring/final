@@ -53,7 +53,6 @@ void print_connected_servers () {
 }
 
 void print_connected_clients() {
-  int i;
 
   /* Print current clients */
   logdb("Current client list: \n");

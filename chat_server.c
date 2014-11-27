@@ -124,29 +124,14 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
   /*  Send updated list of connected servers to all clients  */
   prepareViewMsg(&out_msg, connected_svr);
-  send_message(mbox, client_group, &out_msg, sizeof(Message));
+  send_message(mbox, client_group, (char *) &out_msg, sizeof(Message));
   logdb("Sending updated list of servers to all clients\n");
 
-
-  /* TODO revisit this:
-  if (joined)  {
-    if (num_connected_servers() > 1) {
-      my_state = RECONCILE;
-      Reconcile();
-    }
-  }
-  else {
-
-     foreach room in state.rooms:
-    	foreach a in attendees:
-    		if a.server == departed_server:
-    			a.remove()
-
-  }
-  */
+  /* TODO reconcie! */
+  Reconcile();
 }
 
-
+/* Update the list of connected clients */
 void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   int i;
   Message out_msg;
@@ -181,194 +166,174 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
  *  current global state  */
 
 void apply_room_update (char * name)  {
-			room_info		*new_room, *rm;
-      char        distrolist[MAX_GROUP_NAME];
-      chat_ll   *chat_list;
-      
-	
-			/*  If this is a new room, create it & add to room list */
-			if (room_ll_get(&rooms, name) == 0) {
-				new_room = malloc (sizeof(room_info));
-				strcpy(new_room->name, name);
-				new_room->chats = chat_ll_create();
-        new_room->attendees = client_ll_create();
-        distrolist[0] = my_server_id;
-        strcpy(&distrolist[1], name);
-        strcpy(new_room->distro_group, distrolist);
-
-				room_ll_append(&rooms, *new_room);
-				logdb("NEW ROOM created, <%s>\n", new_room->name);
-        
+  char        distrolist[MAX_GROUP_NAME];
+  room_info   new_room;
+  
+  /*  If this is a new room, create it & add to room list */
+  if (room_ll_get(&rooms, name) == 0) {
+    /* Build room_info */
+    strcpy(new_room.name, name);
+    new_room.chats = chat_ll_create();
+    new_room.attendees = client_ll_create();
+    distrolist[0] = my_server_id;
+    strcpy(&distrolist[1], name);
+    strcpy(new_room.distro_group, distrolist);
+  
+    /* Append to room list */
+    room_ll_append(&rooms, new_room);
+    logdb("NEW ROOM created, <%s>\n", new_room.name);
+          
     /*  Server JOINs 2 groups for a room:
      *    1. Spread Distro group for to send updates to clients in the room
      *    2. Spread Membership group for attendees  */
-		
-        logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
-        join_group(mbox, distrolist);
-        join_group(mbox, name);
-      }
-			else {
-				logdb("Room '%s' already exists", new_room->name);
-			}
+    	
+    logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
+    join_group(mbox, distrolist);
+    join_group(mbox, name);
+  }
+  else {
+    logdb("Room '%s' already exists", name);
+  }
 }
 
+void apply_chat_update (chat_entry * ce, lts_entry * ts) {
+  Message   out_msg;
+  chat_info new_chat;
+  chat_ll   *chat_list;
+  room_info *rm; 
 
-void apply_chat_update (room_info *rm, chat_entry * ce, lts_entry * ts) {
-  Message     out_msg;
-	chat_info		new_chat;
-	chat_ll			*chat_list;
-	
-	chat_list = &(rm->chats);
-	
-	strcpy(new_chat.chat.user, ce->user);
-	strcpy(new_chat.chat.text, ce->text);
-	strcpy(new_chat.chat.room, ce->room);
-	new_chat.lts.pid = ts->pid;
-	new_chat.lts.ts = ts->ts;
-	new_chat.likes = like_ll_create();
-	
-	logdb("New Chat created for room <%s>: (%d,%d), User <%s> said '%s'\n", 
-		new_chat.chat.room, new_chat.lts.ts, new_chat.lts.pid, new_chat.chat.user, new_chat.chat.text);
-
-	chat_ll_insert_inorder_fromback(chat_list, new_chat);
+  /* Grab the room associated with this chat */
+  rm = room_ll_get(&rooms, ce->room);
+    
+  /* Grab the list of chats for the room */
+  chat_list = &(rm->chats);
+  if (!chat_list) {
+    logdb("ERROR! Chat list does not exist for this room\n");
+    exit(1);
+  }
+ 
+  /* Create and populte new chat_info */
+  chat_list = &(rm->chats);
   
-    //  TODO:  SHOULD ONLY SEND TO CLIENTS IN THIS ROOM 
-  // We will need a search_client_list(room_name) function
+  strcpy(new_chat.chat.user, ce->user);
+  strcpy(new_chat.chat.text, ce->text);
+  strcpy(new_chat.chat.room, ce->room);
+  new_chat.lts.pid = ts->pid;
+  new_chat.lts.ts = ts->ts;
+  new_chat.likes = like_ll_create();
+  
+  logdb("New Chat created for room <%s>: (%d,%d), User <%s> said '%s'\n", 
+  	new_chat.chat.room, new_chat.lts.ts, new_chat.lts.pid, new_chat.chat.user, new_chat.chat.text);
+  
+  /* Append to chat list for this room */
+  chat_ll_insert_inorder_fromback(chat_list, new_chat);
+  
+  /* Send a message to the distro group for this room */ 
   prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
-  send_message(mbox, rm->distro_group, &out_msg, sizeof(Message));
-
+  send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
 }
 
+void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
+  update      *mu;
+  chat_entry  *ce;
+  room_info   *rm;
+  chat_ll     *chat_list;
+  chat_info   *ch;
+  like_ll     *like_list;
+  like_entry  new_like;
+  
+  /* Grab the original chat update referenced by the like */
+  mu = update_ll_get_inorder(&updates, ref);
+  if (mu->tag != CHAT) {
+    logerr("ERROR! Reference to non-chat update\n");
+    exit(1);
+  }
+
+  /* Determine the room associated with the chat being liked */
+  ce = (chat_entry *) &(mu->entry);
+  rm = room_ll_get(&rooms, ce->room);
+  
+  /* Grab the list of chats for the room */ 
+  chat_list = &(rm->chats);
+  if (!chat_list) {
+    logdb("ERROR! Chat list does not exist for this room\n");
+    exit(1); 
+  }
+
+  /* Grab the chat_info and update its like list */
+  ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
+  like_list = &(ch->likes);
+
+  if (like_ll_get_inorder_fromback(like_list, like_lts) == 0) {
+    /* Build the new like */
+    strcpy(new_like.user, user);
+    new_like.action = action;
+    new_like.lts = like_lts;
+
+    /* insert it to the like list */
+    like_ll_insert_inorder_fromback(like_list, new_like);
+    like_ll_print(like_list);
+  }
+}
 
 void apply_update (update * u) {
-	
-	room_entry	*re;
-	chat_entry  *ce;
+  room_entry  *re;
+  chat_entry  *ce;
   like_entry  *le;
-	room_info		*rm;
-	chat_ll			*chat_list;
-  like_ll     *like_list;
-  like_entry  *new_like;
-  chat_info   *ch;
-  update      *mu;
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
     lts = u->lts.ts;
   }
-  
-	switch (u->tag)  {
-		case ROOM: 
-			re = (room_entry *) &(u->entry);
-			apply_room_update (re->room);
-			break;
-			
-		case CHAT:
-			ce = (chat_entry *) &(u->entry);
-			rm = room_ll_get(&rooms, ce->room);
-			// TODO null check?
-			chat_list = &(rm->chats);
-      if (!chat_list) {
-        logdb("ERROR! Chat list does not exist for this room\n");
-      }
-			if (chat_ll_get_inorder_fromback(chat_list, u->lts) == 0) {
-				apply_chat_update (rm, ce, &(u->lts));
-			}
-			break;
-			
-		case LIKE:
-			le = (like_entry *) &(u->entry);
 
-      mu = update_ll_get_inorder(&updates, le->lts);
-      if (mu->tag != CHAT) {
-        logerr("ERROR! Reference to non-chat update\n");
-        return;
-      }
-      
-      ce = (chat_entry *) &(mu->entry);
-			rm = room_ll_get(&rooms, ce->room);
-			chat_list = &(rm->chats);
-      if (!chat_list) {
-        logdb("ERROR! Chat list does not exist for this room\n");
-        return;
-      }
-      
+  /* Do not process any duplicate updates EVER */
+  if (update_ll_get_inorder_fromback(&updates, u->lts)) {
+    logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
+  }
 
-      
-      ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
-      like_list = &(ch->likes);
+  /* Insert into the list of updates */
+  update_ll_insert_inorder_fromback(&updates, *u);
 
-			if (like_ll_get_inorder_fromback(like_list, u->lts) == 0) {
-          new_like = malloc (sizeof(like_entry));
-          strcpy(new_like->user, le->user);
-          new_like->action = le->action;
-        
-          /*  new_like takes the 'update' LTS to serialize the like in the LL */
-          new_like->lts.pid = u->lts.pid;
-          new_like->lts.ts = u->lts.ts;
-//				apply_chat_update (rm, ce, &(u->lts));
-          like_ll_insert_inorder(like_list, *new_like);
-          like_ll_print(like_list);
-			}
+  switch (u->tag)  {
+    case ROOM: 
+      re = (room_entry *) &(u->entry);
+      apply_room_update (re->room);
+      break;
 		
-			break;
+    case CHAT:
+      ce = (chat_entry *) &(u->entry);
+      apply_chat_update (ce, &(u->lts));
+      break;
 			
-		default:
-			logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
-	}
-	
+    case LIKE:
+      le = (like_entry *) &(u->entry);
+      apply_like_update(le->lts, u->lts, le->user, le->action);
+      break;
+		
+    default:
+      logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
+    }
 }
 
-void handle_client_command(char client[MAX_GROUP_NAME]) {
-	Message 				out_msg;
-	JoinMessage 		*jm;
-	AppendMessage 	*am;
-	HistoryMessage 	*hm;
-	LikeMessage 		*lm;
-  chat_ll_node         *curr_chat;
-	
-	// TODO:  TEMP CHAT LIST FOR TESTING
-	chat_info		*new_chat;
-	room_info		*new_room;
+void send_history_to_client(char *roomname, char *client) {
+  room_info    *room;
+  chat_info    *chat;
+  chat_ll_node *curr_chat_node;
+  Message      out_msg;
+  
+  room = room_ll_get(&rooms, roomname);
+  if (!room) {
+    logerr("ERROR! Failed to find room when sending history");
+    exit(1);
+  }
 
-	
-	logdb("Client Request:  %c\n", mess.tag);
-	
-	switch (mess.tag) {
-    
- /*   -----------  VIEW REQUEST   -  from user ---------- */
-		case VIEW_MSG :
-			prepareViewMsg(&out_msg, connected_svr);
-			send_message(mbox, client, &out_msg, sizeof(Message));
-			logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
-			break;
-			
-  /*   -----------  JOIN REQUEST   -  from user ---------- */
-		case JOIN_MSG :
-
-			/* Create a new join message */
-			jm = (JoinMessage *) mess.payload;
-			logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", 
-					jm->user, client, jm->room);
-			build_roomEntry(jm->room);
-			
-			/* Save to disk, store in memory, & apply to global state  */
-			// fprintf(....)
-			apply_room_update (jm->room);
-			update_ll_insert_inorder_fromback(&updates, *out_update);
-			
-			/* Send update for a new room */
-			prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
-			send_message(mbox, server_group, &out_msg, sizeof(Message));
-			
-      /* Send room chat history to the client */
-      new_room = room_ll_get(&rooms, jm->room);
-      curr_chat = (new_room->chats.first);
-      while(curr_chat) {
-        new_chat = &(curr_chat->data);
-        prepareAppendMsg(&out_msg, new_chat->chat.room, new_chat->chat.user, new_chat->chat.text, new_chat->lts);
-			  send_message(mbox, client, &out_msg, sizeof(Message));
-        
+  curr_chat_node = room->chats.first;
+  while(curr_chat_node) {
+    chat = &(curr_chat_node->data);
+    prepareAppendMsg(&out_msg, chat->chat.room, chat->chat.user, chat->chat.text, chat->lts);
+    send_message(mbox, client, (char *) &out_msg, sizeof(Message));
+       
+        // TODO send likes!
         /*  
          * curr_like = new_chat->likes
          * while (curr_like) {
@@ -378,140 +343,123 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
          *   curr_like = curr_like->next;
          * }
          */
-         curr_chat = curr_chat->next;
-      }
-      
-			break;
+    curr_chat_node = curr_chat_node->next;
+  }
+}
 
-/*   -----------  HISTORY REQUEST   -  from user ---------- */
-		case HISTORY_MSG :
-			hm = (HistoryMessage *) mess.payload;
-			logdb("HISTORY Request from user: <%s> on client: <%s>, for room <%s>\n", 
-					hm->user, client, hm->room);
-			break;
-
-/*   -----------  APPEND REQUEST   -  from user ---------- */
-		case APPEND_MSG :
-
-			/*  Create the new chat entry  */
-			am = (AppendMessage *) mess.payload;
-			logdb("APPEND Request from user: <%s> on client: <%s>, for room <%s>. Msg is '%s'\n", 
-					am->user, client, am->room, am->text);
-			build_chatEntry(am->user, am->room, am->text);
-
-			/* Save to disk, store in memory, & apply to global state  */
-			// TODO:  fprintf (....)
-			update_ll_insert_inorder_fromback(&updates, *out_update);
-			apply_update(out_update);
-			
-			/* Send update for a new chat messge */
-			prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
-			send_message(mbox, server_group, &out_msg, sizeof(Message));
-      
-			break;
-
-/*   -----------  LIKE REQUEST   -  from user ---------- */
-		case LIKE_MSG: 
-			lm = (LikeMessage *) mess.payload;
-			logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
-			logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->lts.ts, lm->lts.pid);
-
-			build_likeEntry(lm->user, lm->ref, lm->action);
-
-			/* Save to disk, store in memory, & apply to global state  */
-			// TODO:  fprintf (....)
-			update_ll_insert_inorder_fromback(&updates, *out_update);
-			apply_update(out_update);
-			
-			/* Send update for a new chat messge */
-			prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
-			send_message(mbox, server_group, &out_msg, sizeof(Message));
-			
-
-		default :
-			break;
-	}
+void handle_client_command(char client[MAX_GROUP_NAME]) {
+  Message        out_msg;
+  JoinMessage 	 *jm;
+  AppendMessage  *am;
+  HistoryMessage *hm;
+  LikeMessage 	 *lm;
+  
+  logdb("Client Request:  %c\n", mess.tag);
 	
-	return;
+  switch (mess.tag) {
+    case VIEW_MSG :
+      /* Send the connected_servers to the client */
+      prepareViewMsg(&out_msg, connected_svr);
+      send_message(mbox, client, (char *)&out_msg, sizeof(Message));
+      logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
+      break;
+		
+    case HISTORY_MSG :
+      // TODO this is a no op right now. If the client already has the history, maybe we remove this type of MSG
+      hm = (HistoryMessage *) mess.payload;
+      logdb("HISTORY Request from user: <%s> on client: <%s>, for room <%s>\n", hm->user, client, hm->room);
+      break;
 
+    case JOIN_MSG :
+      /* Create and Apply an Update. Send it out to serevers. Then send history to client */
+      jm = (JoinMessage *) mess.payload;
+      logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", jm->user, client, jm->room);
+      build_roomEntry(jm->room);
+      apply_update(out_update);
+      prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
+      send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
+      send_history_to_client(jm->room, client);
+      break;
+
+    case APPEND_MSG :
+      /*  Create and Apply an Update. Send it out to Servers */
+      am = (AppendMessage *) mess.payload;
+      logdb("APPEND Request from user: <%s> on client: <%s>, for room <%s>. Msg is '%s'\n", am->user, client, am->room, am->text);
+      build_chatEntry(am->user, am->room, am->text);
+      apply_update(out_update);
+      prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
+      send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
+      break;
+
+    case LIKE_MSG: 
+      /* Create and Apply an Update. Send it out to Servers */
+      lm = (LikeMessage *) mess.payload;
+      logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
+      logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
+      build_likeEntry(lm->user, lm->ref, lm->action);
+      apply_update(out_update);
+      prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
+      send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
+      break;
+
+    default:
+      logerr("ERROR unhandled command from client\n");
+      exit(1);
+  }
+  return;
 }
 
 void handle_server_update() {
-	Message 				*out_msg;
-	update 		      *new_update;
-	JoinMessage 		*jm;
-	AppendMessage 	*am;
-	HistoryMessage 	*hm;
-	LikeMessage 		*lm;
-  chat_entry      *ce;
+  update         new_update;
+  JoinMessage    *jm;
+  AppendMessage  *am;
+  //HistoryMessage *hm;
+  //LikeMessage 	 *lm;
+  chat_entry     *ce;
 	
-	logdb("Received '%c' Update from server\n", mess.tag);
+  logdb("Received '%c' Update from server\n", mess.tag);
 
   switch (mess.tag) {
-
-    /* ---------  JOIN MESSAGE -- FROM: SVR  ------------*/
     case JOIN_MSG:
-			jm = (JoinMessage *) mess.payload;
+      /* Build and appy the update */
+      jm = (JoinMessage *) mess.payload;
 
-      /*  Do not process a duplicate Update entry */
-      if (update_ll_get_inorder_fromback(&updates, jm->lts)) {
-        return;
-      }
-      
-      /*  Create a new data log entry */
-      new_update = malloc (sizeof(update));
-      new_update->tag = ROOM;
-      new_update->lts.pid = jm->lts.pid;
-      new_update->lts.ts = jm->lts.ts;
-      strcpy(new_update->entry, jm->room);
+      new_update.tag = ROOM;
+      new_update.lts.pid = jm->lts.pid;
+      new_update.lts.ts = jm->lts.ts;
+      strcpy(new_update.entry, jm->room);
       
       logdb("  New Room <%s> from server group\n", jm->room);
-      
-      /* Save to disk, store in memory, & apply to global state  */
-      // fprintf (...)
-      update_ll_insert_inorder_fromback(&updates, *new_update);
-      apply_update(new_update);
-      
+      apply_update(&new_update);
       break;
       
-    /* ---------  APPEND MESSAGE -- FROM: SVR  ------------*/
     case APPEND_MSG:
-			am = (AppendMessage *) mess.payload;
+      /* Build and apply the update */
+      am = (AppendMessage *) mess.payload;
 
-      /*  Do not process a duplicate Update entry */
-      if (update_ll_get_inorder_fromback(&updates, am->lts)) {
-        return;
-      }
-      
       /*  Create a new data log entry */
-      new_update = malloc (sizeof(update));
-      new_update->tag = CHAT;
-      new_update->lts.pid = am->lts.pid;
-      new_update->lts.ts = am->lts.ts;
+      new_update.tag = CHAT;
+      new_update.lts.pid = am->lts.pid;
+      new_update.lts.ts = am->lts.ts;
       
-      ce = (chat_entry *) &(new_update->entry);
+      ce = (chat_entry *) &(new_update.entry);
       strcpy(ce->user, am->user);
       strcpy(ce->room, am->room);
       strcpy(ce->text, am->text);
 
-      logdb("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update->lts.ts, new_update->lts.pid);
-      
-      /* Save to disk, store in memory, & apply to global state  */
-      // fprintf (...)
-      update_ll_insert_inorder_fromback(&updates, *new_update);
-      apply_update(new_update);
+      logdb("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
+      apply_update(&new_update);
       
       break;  
       
-   /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/
     case LIKE_MSG:
+      // TODO handle a like msg!
       break;
       
     default:
       logerr("ERROR! Received a non-update from server\n");
-    }
-
-	
+      exit(1);
+  }
 }
 
 void Initialize (char * server_index) {
@@ -602,10 +550,6 @@ static	void	Run()   {
 
   char		*name;
 
-  char*  	changed_group;
-  int    	num_members;
-  char*  	members;
-
   service_type = 0;
 
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
@@ -641,18 +585,18 @@ static	void	Run()   {
   else if(Is_membership_mess(service_type)) {
     name = strtok(sender, HASHTAG);
     /* Re-interpret the fields passed to SP receive */
-    changed_group = sender;
-    num_members   = num_target_groups;
-    members       = target_groups;
+    //changed_group = sender;
+    //num_members   = num_target_groups;
+    //members       = target_groups;
 
-    if (strcmp(changed_group, server_group) == 0) {
-      handle_server_change(num_members, members);
+    if (strcmp(sender, server_group) == 0) {
+      handle_server_change(num_target_groups, target_groups);
     }
-    else if (strcmp(changed_group, client_group) == 0) {
-      handle_client_change(num_members, members);
+    else if (strcmp(sender, client_group) == 0) {
+      handle_client_change(num_target_groups, target_groups);
     }
     else {
-      logdb ("Group change on <%s>\n", changed_group);
+      logdb ("Group change on <%s>\n", sender);
     }
   }
 
