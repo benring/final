@@ -21,6 +21,11 @@
 //	char				spread_grp[NAME_LEN];
 //} client_state;
 
+static char       state_label[4][11]= 
+      {"LOGGED OUT",
+       "LOGGED IN",
+       "CONNECTED",
+       "CHATTING"};
 
 /* Message handling vars */
 static	char		    User[USER_NAME_LIMIT];
@@ -30,6 +35,9 @@ static  Message		  *out_msg;
 static  Message     in_msg;
 static	lts_entry		null_lts;
 static	char		    mess[MAX_MESSAGE_SIZE];
+static  sp_time     display_delay;
+static  sp_time     idle;
+
 
 /*  Client Global State  */
 static	int			  state;
@@ -38,6 +46,7 @@ static	char		  my_room[MAX_GROUP_NAME];
 static  char      my_room_distrolist[MAX_GROUP_NAME];
 static	char		  server_inbox[MAX_GROUP_NAME];
 static 	char		  last_command;
+static  char      last_message[80];
 static  chat_ll   chat_room;
 static  client_ll attendees;
 static  name_ll   displayed_attendees;
@@ -48,13 +57,36 @@ static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
 void Initialize();
 void Print_menu(); 
 
-void display() {
-  if (state > CONN) {
-      logdb("Attendees");
-      name_ll_print(&displayed_attendees);
-  }
- 	printf("%s>", &User[3]);
+void display(int code) {
+  sp_time   now;
+  now = E_get_time();
+  E_sub_time(now, display_delay);
+  
+  if (code == 1) {
+    logdb("Waiting to display\n");
+  }  else {
 
+    loginfo("------------------------------------------\n");
+//    loginfo("  Current Status:  %s\n", state_label[state]);
+    if (state >= CONN) {
+      if (strlen(last_message) == 0) {
+        loginfo("  Connected to SERVER #%d\n", my_server+1);
+      }
+      else {
+        loginfo("  %s\n", last_message);
+      }
+      loginfo("------------------------------------------\n");
+    }
+    if (state == RUN) {
+        loginfo("ROOM:  %s\n", my_room);
+        loginfo("Attendees");
+        name_ll_print(&displayed_attendees);
+        chat_ll_print(&chat_room);
+    }
+    loginfo("\n%s> ", &User[3]);
+    
+    fflush(stdout);
+  }
 }
 
 void process_server_message() {
@@ -66,6 +98,10 @@ void process_server_message() {
   chat_entry      *ce;
   chat_info       *ch;
   int             i;
+  client_ll_node  *curr;
+  char            client_name[MAX_GROUP_NAME];
+  char            *user;
+
 	
 	logdb("Received '%c' Update from server\n", in_msg.tag);
 
@@ -89,14 +125,11 @@ void process_server_message() {
       strcpy(ch->chat.room, am->room);
       strcpy(ch->chat.text, am->text);
 
-      logdb("  New chat from server: LTS (%d,%d), User <%s> said '%s'\n", 
+      logdb("  New chat from server: LTS (%d,%d), User '%s' said \"%s\"\n", 
         ch->lts.ts, ch->lts.pid, ch->chat.user, ch->chat.text);
       
       /* Append to global chat list  */
       chat_ll_insert_inorder(&chat_room, *ch);
-      
-      // TODO:  Only DISPLAY last 25 chats
-      chat_ll_print(&chat_room); 
 
       break;  
       
@@ -109,10 +142,11 @@ void process_server_message() {
    /* ---------  VIEW MESSAGE -- FROM: SVR  ------------*/
     case VIEW_MSG:
       vm = (ViewMessage *) in_msg.payload;
+      
+      /*  Reset list of connected servers */
       for (i=0; i<MAX_SERVERS; i++) {
         connected_server[i] = vm->connected_server[i];
       }
-      logdb("  Received conn-server status\n");
       loginfo("CONNECTED servers:  [ ");
       for (i=0; i<MAX_SERVERS; i++) {
         if (vm->connected_server[i]) {
@@ -120,51 +154,94 @@ void process_server_message() {
         }
       }
       loginfo("  ]\n");
+      
+      /* Update displayed attendee list for my_room based on connected svrs */
+      curr = attendees.first;
+      while (curr) {
+        if (curr->data.name[1] == 's') {
+          curr = curr->next;
+          continue;
+        }
+        
+        i = (int)(curr->data.name[1] - '1');
+        strcpy(client_name, curr->data.name);
+        user = strtok(client_name, HASHTAG);
+        
+        /* Add a new unique user name for display */
+        if (connected_server[i] && !name_ll_search(&displayed_attendees, &user[3])) {
+          name_ll_append(&displayed_attendees, &user[3]);
+        }
+        
+        /* Remove user from display, if was previously dislayed */
+        if (!connected_server[i] && name_ll_search(&displayed_attendees, &user[3])) {
+          name_ll_remove(&displayed_attendees, &user[3]);
+        }
+        curr = curr->next;
+      }
       break;
-
       
     default:
       logerr("ERROR! Received a non-update from server\n");
     }
 }
 
-void process_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
+void process_client_change(int num_members, 
+                           char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   client_info   *new_client;
   client_ll_node *curr = attendees.first;
   int i;
   char *user;
+  int client_server;
   char client_name[MAX_GROUP_NAME];
   
+  /* Remove attendees from global list based on recent membership msg */
   while (curr) {
     if (!is_client_in_list(curr->data.name, num_members, members)) {
-      printf("Client %s has LEFT the room \n", curr->data.name);
       client_ll_remove(&attendees, curr->data.name);    
-      // TODO:  Convert to just user name (joe vs 101joe)
-      strcpy(client_name, new_client->name);
+
+      /*  Process unique usernames only */
+      strcpy(client_name, curr->data.name);
       user = strtok(client_name, HASHTAG);
+      
+      /*  For display, only process clients 
+       *        whose server is connected to our server */
       if (user[0] != 's') {
-        name_ll_remove(&displayed_attendees, &user[3]);
+        client_server = (int)(user[0] - '1');
+//        logdb("(c+) Checking %s from server %d\n", user, client_server);
+
+        if (connected_server[client_server] && 
+            name_ll_search(&displayed_attendees, &user[3])) {
+          name_ll_remove(&displayed_attendees, &user[3]);
+          printf("Client '%s' has LEFT room <%s>\n", &user[3], my_room);
+        }
       }
     }
     curr = curr->next;
   }
 
-  /* Check for additions */
+  /* Check for additions to global attendee list (for current room) */
   for(i=0; i< num_members; i++) {
     if(!client_ll_get(&attendees, members[i])) {
       new_client = malloc(sizeof(client_info));
       strcpy(new_client->name, members[i]);
-      
-      // TODO: Update with unique users
       strcpy(new_client->user, members[i]);
       strcpy(new_client->room, my_room);      
-      printf("Client %s has JOINED the room \n", members[i]);
       client_ll_append(&attendees, *new_client);
-      // TODO:  Convert to just user name (joe vs 101joe)
+
+      /*  Process unique usernames only */
       strcpy(client_name, new_client->name);
       user = strtok(client_name, HASHTAG);
+
+      /*  For display, only add unique clients 
+       *        whose server is connected to our server */
       if (user[0] != 's') {
-        name_ll_insert(&displayed_attendees, &user[3]);
+        client_server = (int)(user[0] - '1');
+//        logdb("(c-) Checking %s from server %d\n", user, client_server);
+        if (connected_server[client_server] && 
+            !name_ll_search(&displayed_attendees, &user[3])) {
+          name_ll_insert(&displayed_attendees, &user[3]);
+          printf("Client '%s' has JOINED room <%s> \n", &user[3], my_room);
+        }
       }
     }
   }  
@@ -179,18 +256,19 @@ void Read_message() {
   int			service_type;
   int16		mess_type;
   int			endian_mismatch;
-  int			ret;
+  int			ret, i;
 
   char*  	changed_group;
   int    	num_members;
   char*  	members;
   char    *name;
+  int     server_alive;
 
   service_type = 0;
 
-  fflush(stdout);
-  logdb("----------------------\n");
-	display();
+//  fflush(stdout);
+//  logdb("---------   ");
+//	display();
 
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
   	           &mess_type, &endian_mismatch, sizeof(Message), (char *) &in_msg );
@@ -207,7 +285,7 @@ void Read_message() {
       logerr("ERROR! Bad Sender. Message received from %s, name: %s\n", sender, name);
       return;
     }
-    logdb("  Server message. Contents -->: %s\n", (char *) &in_msg);
+//    logdb("  Server message. Contents -->: %s\n", (char *) &in_msg);
     process_server_message();
   }
 
@@ -218,14 +296,29 @@ void Read_message() {
     changed_group = sender;
     num_members   = num_target_groups;
     members       = target_groups;
+    logdb("Membership change for %s\n", sender);
 
     if (strcmp(changed_group, server_group) == 0) {
-      if (name[0] == 's') {
-        /* Our server is disconnected */
-        logdb("Server, %s, is disconnected")
-        // TODO: Handle a lost server
+      /* Always verify our server is still connected */
+      server_alive = FALSE;
+      for (i=0; i<num_members; i++) {
+        logdb("Check is %s is alive\n", target_groups[i]);
+        if (target_groups[i][1] == 's') {
+          server_alive = TRUE;
+          break;
+        }
       }
-      // OTHERWISE: Ignore, other clients join/leave server's client group
+      if (!server_alive) {
+        /* Our server is disconnected */
+        loginfo("Server # %d is disconnected. Please connect to a different server\n.", my_server+1);
+        if (state == RUN) {
+          leave_group(mbox, my_room);
+          leave_group(mbox, my_room_distrolist);
+        }
+        leave_group(mbox, server_group);
+        state = LOGG;
+      }
+      // OTHERWISE: Ignore other servers joining/leaving
 
     }
     else {
@@ -238,7 +331,9 @@ void Read_message() {
   else {
     logdb("Received a BAD message\n");
   }
-
+  display(0);
+  fflush(stdout);
+  idle = E_get_time();
 }
 
 
@@ -296,14 +391,17 @@ void User_command()   {
 			break;
 		}
     
-    clear_state();
+   /*  Depart room, if joined to a room */
+    if (state == RUN) {
+      clear_room();
+    }
     /*  Disconnect from current server, if already connected */
-    if (my_server >= 0) {
-      my_server = -1;
-    // TODO:  Any other disconn logic goes here
+    if (state >= CONN) {
+      leave_group(mbox, server_group);
+      SP_disconnect(mbox);
+      state = LOGG;
     }
     my_server = atoi(arg) - 1;
-
     
 		logdb ("CONNECT to Server <%s>\n", arg);
 		strcpy(server_group, SERVER_GROUP_PREFIX);
@@ -312,6 +410,7 @@ void User_command()   {
 		User[0] = arg[0];
 
 		i = 1;
+		/* Connect to Spread */
 		do {
 			if (i == 100)  {
 				SP_error(ret);
@@ -321,20 +420,16 @@ void User_command()   {
 			sprintf(client_id, "%02d", i++);
 			memcpy(&User[1], client_id, 2);
 			ret = connect_spread(&mbox, User, Private_group);
-			
-
 		} while (ret != ACCEPT_SESSION);
-		/* Connect to Spread */
-		E_init();
 
 		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
 
 		join_group(mbox, server_group);
 		strcpy(server_inbox, SERVER_NAME_PREFIX);
 		server_inbox[7] = arg[0];
+    connected_server[my_server] = TRUE;
 		
 		state = CONN;
-		// ATTACH FD HERE
 		break;
 
   /* ------------- HISTORY --------------------------------------*/
@@ -405,26 +500,28 @@ void User_command()   {
   /* ------------- JOIN --------------------------------------*/
 	case 'j':
 		ret = sscanf(&command[2], "%s", arg);
-		if( ret < 1 )  {
+		if (state < CONN) {
+			loginfo("You must be logged in and connected to a server to join a room\n");
+			break;
+		}
+    else if( ret < 1 )  {
 			printf("Proper usage is j <room_name> \n");
 			break;
 		}
 		else if (ret > MAX_GROUP_NAME) {
-			loginfo("Please use a name less than %d characters long\n", MAX_GROUP_NAME);
-		}
-		else if (state < CONN) {
-			loginfo("You must be logged in and connected to join a room\n");
-			break;
+			loginfo("Please use a name less than %d characters long\n", MAX_GROUP_NAME-12);
+      break;
 		}
 
-    clear_state();
+   /*  Depart room, if joined to a room */
+    if (state == RUN) {
+      clear_room();
+    }
 
 		logdb ("JOIN ROOM: <%s>\n", my_room);
 		strcpy(my_room, arg);
-    
-    
 
-		// SEND JOIN COMMAND TO SERVER 
+		/* Send Join message to server */
 		prepareJoinMsg(out_msg, my_room, User, null_lts);
 		logdb("Message contents: <%s>\n", out_msg);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
@@ -436,10 +533,8 @@ void User_command()   {
  		strcpy(&my_room_distrolist[1], my_room);
     join_group(mbox, my_room_distrolist);
     join_group(mbox, my_room);
-
     
 		state = RUN;
-		
 		break;
 
   /* ------------- QUIT --------------------------------------*/
@@ -460,6 +555,9 @@ void User_command()   {
 			loginfo("Please limit your name to %d charaters or less\n", USER_NAME_LIMIT);
 			break;
 		}
+    
+    // TODO:  Check requirements, may need to logout/disconn completely 
+    
 		User[0] = '0';
 		User[1] = '0';
 		User[2] = '0';
@@ -490,12 +588,14 @@ void User_command()   {
 		loginfo("Invalid command. Printing help menu.. \n");
 		Print_menu();
 	}
-
+  display(0);
+  fflush(stdout);
+  idle = E_get_time();
 }
 
 
 int main (int argc, char *argv[])  {
-	
+  
 	/*  Handle Command line arguments */
 	if (argc > 2)  {
 		  printf("Usage: chat_client   {no args}\n");
@@ -505,36 +605,33 @@ int main (int argc, char *argv[])  {
 	Initialize();
 	
 	while (state < CONN) {
-  	printf("%s>", &User[3]);
-
+    display(0);
 		User_command();
 	}
-	
-	E_attach_fd( 0, READ_FD, User_command, 0, NULL, LOW_PRIORITY );
-	E_attach_fd( mbox, READ_FD, Read_message, 0, NULL, LOW_PRIORITY );
+	E_init();
+	E_attach_fd(0, READ_FD, User_command, 0, NULL, HIGH_PRIORITY );
+  E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, LOW_PRIORITY );
 	E_handle_events();
 
-	disconn_spread(mbox);
+  logdb("EXITTED Spread Event Handling\n");
+//	disconn_spread(mbox);
 	
 	return(0);
 }
 
 
-void clear_state ()  {
+void clear_room ()  {
       /*  Cleare current state if already in room */
-    if (my_room[0] != '\0') {
-      leave_group(mbox, my_room);
-      leave_group(mbox, my_room_distrolist);
-      my_room[0] = '\0';
-      my_room_distrolist[0] = '\0';
-      // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
-      //  function or we need to free the mem)
-      // TODO:  CLEAR Attendee list HERE
-      
-    }
-    chat_room = chat_ll_create();
-    attendees = client_ll_create();
-
+    leave_group(mbox, my_room);
+    leave_group(mbox, my_room_distrolist);
+    my_room[0] = '\0';
+    my_room_distrolist[0] = '\0';
+    // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
+    //  function or we need to free the mem)
+    // TODO:  CLEAR Attendee list HERE
+//    chat_room = chat_ll_create();
+//    attendees = client_ll_create();
+  state = CONN;
 }
 
 void Initialize() {
@@ -543,6 +640,9 @@ void Initialize() {
 	null_lts.pid = 0;
 	null_lts.ts = 0;
   my_server = -1;
+  display_delay.sec = 1;
+  display_delay.usec = 0;
+
 }
 
 void Print_menu()  {

@@ -28,7 +28,7 @@ void chat_ll_print(chat_ll* list) {
     chat_ll_node* curr = list->first;
     while (curr) {
 //      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
-      printf("%d. [%s]: %s\n", index++, curr->data.chat.user, curr->data.chat.text);
+      printf("%d. [%s]: %s\n", index++, &(curr->data.chat.user[3]), curr->data.chat.text);
       curr = curr->next;
     }
   }

@@ -40,6 +40,7 @@ void name_ll_print(name_ll* list)
   }
 }
 
+
 int name_ll_append(name_ll* list, char name[MAX_GROUP_NAME])
 {
   name_ll_node *node = malloc(sizeof(name_ll_node));

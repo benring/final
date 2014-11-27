@@ -149,6 +149,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
 void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   int i;
+  Message out_msg;
   client_info new_client;
   /* Check for removals */
   client_ll_node *curr = connected_clients.first;
@@ -165,6 +166,11 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     if(!client_ll_get(&connected_clients, members[i])) {
       printf("Client %s has connected to the server! \n", members[i]);
       add_client(members[i]);
+      
+ 			prepareViewMsg(&out_msg, connected_svr);
+			send_message(mbox, members[i], &out_msg, sizeof(Message));
+
+      
     }
   }
 
