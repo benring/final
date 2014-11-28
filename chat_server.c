@@ -244,6 +244,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   like_entry  new_like;
   
   /* Grab the original chat update referenced by the like */
+  logdb("Getting room for LTS Ref (%d, %d)\n", ref.ts, ref.pid);
   mu = update_ll_get_inorder(&updates, ref);
   if (mu == NULL) {
     logdb("Update does not exist locally.\n");
@@ -266,6 +267,8 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
 
   /* Grab the chat_info and update its like list */
   ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
+  logdb("Current Like list for associated chat at LTS (%d, %d)\n", ref.ts, ref.pid);
+
   like_list = &(ch->likes);
   like_ll_print(like_list);
 
@@ -284,6 +287,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
     }
 
     /* Build the new like */
+    logdb("New like occured at LTS (%d, %d)\n", like_lts.ts, like_lts.pid);
     strcpy(new_like.user, user);  
     new_like.action = action;
     new_like.lts = like_lts;
@@ -294,7 +298,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   }
   
     /* Send a message to the distro group for this room */ 
-  prepareLikeMsg(&out_msg, user, like_lts, action, ref);
+  prepareLikeMsg(&out_msg, user, ref, action, like_lts);
   send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
 
   return 1;
@@ -420,7 +424,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
     case LIKE_MSG: 
       /* Create and Apply an Update. Send it out to Servers */
       lm = (LikeMessage *) mess.payload;
-      logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
+      logdb("LIKE Request from user: <%s> on client: <%s>\n", lm->user, client);
       logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
       
       build_likeEntry(lm->user, lm->ref, lm->action);
@@ -569,15 +573,15 @@ void build_chatEntry (char * u, char * r, char * t) {
 }
 
 
-void build_likeEntry (char * u, lts_entry e, char a) {
+void build_likeEntry (char * u, lts_entry ref, char a) {
 	like_entry *le;
 	out_update->tag = LIKE;
 	out_update->lts.ts = ++lts;
 	
 	le = (like_entry *) &(out_update->entry);
 	strcpy(le->user, u);
-	le->lts.ts = e.ts;
-	le->lts.pid = e.pid;
+	le->lts.ts = ref.ts;
+	le->lts.pid = ref.pid;
 	le->action = a;
 }
 

@@ -97,6 +97,7 @@ void process_server_message() {
   chat_entry      *ce;
   like_entry      *le;
   chat_info       *ch;
+  like_ll         *ll;
   int             i;
   client_ll_node  *curr;
   char            client_name[MAX_GROUP_NAME];
@@ -147,12 +148,16 @@ void process_server_message() {
       le->lts.ts = lm->lts.ts;
       le->action = lm->action;
 
-      logdb("  New like from server: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
+      logdb("  New like from server: User '%s' requested '%c' on LTS (%d,%d), occurring at LTS (%d, %d)\n", le->user, le->action, lm->ref.ts, lm->ref.pid, le->lts.ts, le->lts.pid);
       
       /* Get the referenced chat from the room */
       // TODO:  Error check when switching rooms & like come after for the prev. room
-      
-      like_ll_append(&chat_room, *le);
+      ch = chat_ll_get_inorder(&chat_room, lm->ref);
+//      logdb("Printing Like List for LTS (%d, %d):\n", lm->ref.ts, lm->ref.pid);
+//      like_ll_print(&(ch->likes));
+      like_ll_append(&(ch->likes), *le);
+//      logdb("Printing Like List for LTS (%d, %d):\n", lm->ref.ts, lm->ref.pid);
+//      like_ll_print(&(ch->likes));
     
       break;
 
@@ -364,6 +369,7 @@ void User_command()   {
 	
 	lts_entry	ref;
   chat_info   *ch;
+  like_ll     *ll;
 
   
 	for( i=0; i < sizeof(command); i++ ) command[i] = 0;
@@ -486,8 +492,11 @@ void User_command()   {
     }
 
     ch = chat_ll_get(&chat_room, ref);
+    logdb("Current Like list for this chat:\n");
+    like_ll_print(&(ch->likes));
     if (does_like(&(ch->likes), &User[3])) {
       loginfo("You cannot like a chat you already like.\n");
+      break;
     }
     
 		prepareLikeMsg(out_msg, &User[3], ref, ADD_LIKE, null_lts);
@@ -520,7 +529,8 @@ void User_command()   {
 
     ch = chat_ll_get(&chat_room, ref);
     if (!does_like(&(ch->likes), &User[3])) {
-      loginfo("You Un-like a chat you do not like.\n");
+      loginfo("You cannot Un-like a chat you do not like.\n");
+      break;
     }
 
     

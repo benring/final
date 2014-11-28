@@ -21,6 +21,7 @@ int like_ll_is_empty(like_ll* list) {
 }
 
 void like_ll_print(like_ll* list) {
+  like_ll_node* curr;
   if (like_ll_is_empty(list)) {
     printf("Empty List\n");
   }
@@ -28,9 +29,9 @@ void like_ll_print(like_ll* list) {
     printf("First: (%d,%d)\n", list->first->data.lts.ts, list->first->data.lts.pid);
     printf("Last: (%d,%d)\n", list->last->data.lts.ts, list->last->data.lts.pid);
     printf("Contents: \n");
-    like_ll_node* curr = list->first;
+    curr = list->first;
     while (curr) {
-      printf("(%d,%d)\n", curr->data.lts.ts, curr->data.lts.pid);
+      printf("(%d,%d) '%s'\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.user);
       curr = curr->next;
     }
   }
@@ -38,6 +39,7 @@ void like_ll_print(like_ll* list) {
 
 int like_ll_append(like_ll* list, like_entry data) {
   like_ll_node *node = malloc(sizeof(like_ll_node));
+  like_ll_node* old_last;
   if (!node) {
     return 0; /* failure */
   }
@@ -50,7 +52,7 @@ int like_ll_append(like_ll* list, like_entry data) {
     list->last = node;
   }
   else {
-    like_ll_node* old_last = list->last;
+    old_last = list->last;
     old_last->next = node;
     node->prev = old_last;
     list->last = node;
@@ -254,16 +256,21 @@ int does_like (like_ll *list, char * name) {
   curr = list->first;
   while(curr) {
     printf("Comp: %s, %s\n", curr->data.user, name);
-    if(strcmp(curr->data.user, name)) {
+    if(strcmp(curr->data.user, name) == 0) {
       if (curr->data.action == ADD_LIKE) {
+        logdb("%s Likes it\n");
         result++;
       }
       else {
+        logdb("%s Un-Likes it\n");
         result--;
       }
     }
     curr = curr->next;
   }
-  result = (result > 0) ? TRUE : FALSE;
+  printf("Does Like result = %d\n", result);
+  if (result > 0) {
+    return TRUE;
+  }
   return result;
 }
