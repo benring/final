@@ -34,6 +34,30 @@ void chat_ll_print(chat_ll* list) {
   }
 }
 
+void chat_ll_print_num(chat_ll* list, int num) {
+  int   index = 0;
+  int   display_min = list->size - num;
+
+  if (chat_ll_is_empty(list)) {
+    printf("Empty List\n");
+  }
+  else {
+    chat_ll_node* curr = list->first;
+    while (curr) {
+//      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
+      if (index++ >= display_min) {
+        printf("%d. [%s]: %-80s", index, &(curr->data.chat.user[3]), curr->data.chat.text);
+        if (curr->data.likes.count > 0) {
+          printf("Likes: %d", curr->data.likes.count);
+        }
+        printf("\n");
+      }
+      curr = curr->next;
+    }
+  }
+}
+
+
 lts_entry chat_ll_get_lts(chat_ll *list, int i) {
   int curr_index = 1;
   lts_entry blank;
@@ -72,7 +96,7 @@ int chat_ll_append(chat_ll* list, chat_info data) {
     node->prev = old_last;
     list->last = node;
   }
-
+   list->size++; 
   return 1; /* success */
 }
 
@@ -121,7 +145,7 @@ int chat_ll_insert_inorder(chat_ll* list, chat_info data) {
     prev->next = node;
     curr->prev = node;
   }
-    
+   list->size++; 
   return 1; 
 }
 
@@ -192,6 +216,8 @@ chat_info* chat_ll_get(chat_ll* list, lts_entry lts) {
   
   return result;
 }
+
+
 
 chat_info* chat_ll_get_inorder(chat_ll* list, lts_entry lts) {
   chat_info* result = 0;

@@ -35,6 +35,8 @@ int name_ll_append(name_ll* list, char *name);
 
 int name_ll_insert(name_ll* list, char *name);
 
+int name_ll_remove(name_ll* list, char *name);
+
 /* Search the whole list for a name, return true or false */ 
 int name_ll_search(name_ll* list, char *name);
 

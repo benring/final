@@ -1,4 +1,3 @@
-
 #include "message.h"
 #include "commo.c"
 #include "chat_ll.h"
@@ -81,7 +80,7 @@ void display(int code) {
         loginfo("ROOM:  %s\n", my_room);
         loginfo("Attendees");
         name_ll_print(&displayed_attendees);
-        chat_ll_print(&chat_room);
+        chat_ll_print_num(&chat_room, 25);
     }
     loginfo("\n%s> ", &User[3]);
     
@@ -96,6 +95,7 @@ void process_server_message() {
 	LikeMessage 		*lm;
   ViewMessage     *vm;
   chat_entry      *ce;
+  like_entry      *le;
   chat_info       *ch;
   int             i;
   client_ll_node  *curr;
@@ -130,12 +130,29 @@ void process_server_message() {
       
       /* Append to global chat list  */
       chat_ll_insert_inorder(&chat_room, *ch);
+      
+      /* Append to chat index list */
 
       break;  
       
    /* ---------  LIKE MESSAGE -- FROM: SVR  ------------*/
     case LIKE_MSG:
-    
+      
+      lm = (LikeMessage *) in_msg.payload;
+
+      /*  Create a new like entry */
+      le = malloc(sizeof(like_entry));
+      strcpy(le->user, lm->user);
+      le->lts.pid = lm->lts.pid;
+      le->lts.ts = lm->lts.ts;
+      le->action = lm->action;
+
+      logdb("  New like from server: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
+      
+      /* Get the referenced chat from the room */
+      // TODO:  Error check when switching rooms & like come after for the prev. room
+      
+      like_ll_append(&chat_room, *le);
     
       break;
 
@@ -346,6 +363,7 @@ void User_command()   {
 	char 	client_id[3];
 	
 	lts_entry	ref;
+  chat_info   *ch;
 
   
 	for( i=0; i < sizeof(command); i++ ) command[i] = 0;
@@ -458,16 +476,21 @@ void User_command()   {
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
     like_num = atoi(arg);
-		logdb ("Liking Chat # <%d>\n", like_num);
 		
 	  ref = chat_ll_get_lts(&chat_room, like_num);
+		logdb ("Trying to Like Chat # <%d>, LTS: (%d,%d)\n", like_num,ref.ts, ref.pid);
     
     if (lts_eq(ref, null_lts)) {
       loginfo("You cannot like a chat that does not exist.\n");
       break;
     }
+
+    ch = chat_ll_get(&chat_room, ref);
+    if (does_like(&(ch->likes), &User[3])) {
+      loginfo("You cannot like a chat you already like.\n");
+    }
     
-		prepareLikeMsg(out_msg, User, ref, ADD_LIKE, null_lts);
+		prepareLikeMsg(out_msg, &User[3], ref, ADD_LIKE, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
@@ -484,16 +507,24 @@ void User_command()   {
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
     like_num = atoi(arg);
-		logdb ("Un-Liking Chat # <%d>\n", like_num);
 		
     ref = chat_ll_get_lts(&chat_room, like_num);
+
+		logdb ("Trying to Un-Like Chat # <%d>, LTS: (%d,%d)\n", like_num,ref.ts, ref.pid);
+
     
     if (lts_eq(ref, null_lts)) {
       loginfo("You cannot Un-like a chat that does not exist.\n");
       break;
     }
+
+    ch = chat_ll_get(&chat_room, ref);
+    if (!does_like(&(ch->likes), &User[3])) {
+      loginfo("You Un-like a chat you do not like.\n");
+    }
+
     
-		prepareLikeMsg(out_msg, User, ref, REM_LIKE, null_lts);
+		prepareLikeMsg(out_msg, &User[3], ref, REM_LIKE, null_lts);
 		send_message(mbox, server_inbox, out_msg, sizeof(Message));
 		break;
 
@@ -574,7 +605,7 @@ void User_command()   {
 			loginfo("You must be logged in and connected to a server to view connected servers.\n");
 			break;
 		}
-		logdb("Sending view server request to server, %s\n", server_inbox)
+		logdb("Sending view server request to server, %s\n", server_inbox);
 		
 		out_msg->tag = VIEW_MSG;
 		send_message (mbox, server_inbox, out_msg, sizeof(Message));
@@ -629,9 +660,8 @@ void clear_room ()  {
     my_room_distrolist[0] = '\0';
     // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
     //  function or we need to free the mem)
-    // TODO:  CLEAR Attendee list HERE
-//    chat_room = chat_ll_create();
-//    attendees = client_ll_create();
+    chat_room = chat_ll_create();
+    attendees = client_ll_create();
   state = CONN;
 }
 

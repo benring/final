@@ -87,23 +87,6 @@ int name_ll_insert(name_ll* list, char *name)
 }
 
 
-int name_ll_search(name_ll* list, char *name)
-{
-  name_ll_node* curr = list->first;
-  if (name_ll_is_empty(list)) {
-    return 0;
-  }
-  while(curr) {
-    if (strcmp(curr->data.name, name) == 0) {
-      return 1;
-    }
-    curr = curr->next;
-  }
-  return 0;
-}
-
-
-
 int name_ll_remove(name_ll* list, char *name)
 {
   name_ll_node* curr = list->first;
@@ -139,6 +122,23 @@ int name_ll_remove(name_ll* list, char *name)
       return 1;
     }
     prev = curr;
+    curr = curr->next;
+  }
+  return 0;
+}
+
+
+
+int name_ll_search(name_ll* list, char *name)
+{
+  name_ll_node* curr = list->first;
+  if (name_ll_is_empty(list)) {
+    return 0;
+  }
+  while(curr) {
+    if (strcmp(curr->data.name, name) == 0) {
+      return 1;
+    }
     curr = curr->next;
   }
   return 0;

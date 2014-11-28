@@ -19,6 +19,14 @@
 #define MAX_CLIENTS 100
 #define MAX_SERVERS 5
 
+/*  Actions  */
+#define JOIN 10
+#define LEAVE 11
+#define ADD_LIKE 'L'
+#define REM_LIKE 'R'
+
+
+
 #define	DEBUG 1
 #ifdef  DEBUG
 #define logdb(args...) printf(args);

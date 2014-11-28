@@ -27,18 +27,4 @@ typedef struct chat_entry {
 	char 	text[CHAT_LEN];
 } chat_entry;
 
-
-
-
-
-/*  Type of functions for turning stable data into current stae */
-/*  return types TBD */
-/*
-getUserList (char * room);
-getRecentChats (char * room, int num);
-getAllChats (char * room);
-appendChat (char * room, char * user, char * chat);
-likeChat (char * user, int clognum);
-removeLike (char * user, int clognum);
-*/
 #endif

@@ -19,6 +19,7 @@ typedef struct chat_ll_node {
 typedef struct chat_ll {
   chat_ll_node* first;
   chat_ll_node* last;
+  int           size;
 } chat_ll;
 
 /* Create an empty list */

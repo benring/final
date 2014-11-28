@@ -1,3 +1,4 @@
+
 #include "like_ll.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -6,6 +7,7 @@ like_ll like_ll_create() {
   like_ll result;
   result.first = 0;
   result.last = 0;
+  result.count = 0;
   return result;
 }
 
@@ -52,6 +54,14 @@ int like_ll_append(like_ll* list, like_entry data) {
     old_last->next = node;
     node->prev = old_last;
     list->last = node;
+  }
+  
+  /* Increase count for a ADD_LIKE, decrement for a REM_LIKE */
+  if (node->data.action == ADD_LIKE) {
+    list->count++;
+  }
+  else {
+    list->count--;
   }
 
   return 1; /* success */
@@ -102,7 +112,14 @@ int like_ll_insert_inorder(like_ll* list, like_entry data) {
     prev->next = node;
     curr->prev = node;
   }
-    
+  
+  /* Increase count for a ADD_LIKE, decrement for a REM_LIKE */
+  if (curr->data.action == ADD_LIKE) {
+    list->count++;
+  }
+  else {
+    list->count--;
+  }
   return 1; 
 }
 
@@ -152,17 +169,25 @@ int like_ll_insert_inorder_fromback(like_ll* list, like_entry data) {
     next->prev = node;
     curr->next = node;
   }
+  /* Increase count for a ADD_LIKE, decrement for a REM_LIKE */
+  if (curr->data.action == ADD_LIKE) {
+    list->count++;
+  }
+  else {
+    list->count--;
+  }
     
   return 1; 
 }
 
 like_entry* like_ll_get(like_ll* list, lts_entry lts) {
   like_entry* result = 0;
+  like_ll_node* curr;
   if (like_ll_is_empty(list)) {
     return result;
   }
 
-  like_ll_node* curr = list->first;
+  curr = list->first;
   while(curr) {
     if(lts_eq(curr->data.lts, lts)) {
       result = &curr->data;
@@ -215,5 +240,30 @@ like_entry* like_ll_get_inorder_fromback(like_ll* list, lts_entry lts) {
     curr = curr->prev;
   }
   
+  return result;
+}
+
+int does_like (like_ll *list, char * name) {
+  int result = 0;
+  like_ll_node* curr;
+  if (like_ll_is_empty(list)) {
+    return result;
+  }
+  like_ll_print(list);
+
+  curr = list->first;
+  while(curr) {
+    printf("Comp: %s, %s\n", curr->data.user, name);
+    if(strcmp(curr->data.user, name)) {
+      if (curr->data.action == ADD_LIKE) {
+        result++;
+      }
+      else {
+        result--;
+      }
+    }
+    curr = curr->next;
+  }
+  result = (result > 0) ? TRUE : FALSE;
   return result;
 }

@@ -13,7 +13,7 @@
 
 #include "transaction.h"
 
-#define MAX_MESSAGE_SIZE 1024
+#define MAX_MESSAGE_SIZE 256
 
 /*  Message Tag Codes  */
 #define LTS_VECTOR 'T'
@@ -24,11 +24,6 @@
 #define HISTORY_MSG 'H'
 #define LIKE_MSG 'L'
 
-/*  Actions  */
-#define JOIN 10
-#define LEAVE 11
-#define ADD_LIKE 'L'
-#define REM_LIKE 'R'
 
 /*  Basic Message Struct:  TAG & PAYLOAD  */
 typedef struct Message {

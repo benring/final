@@ -165,7 +165,7 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 /*  Following "Apply" Functions are designed for applying updates to the 
  *  current global state  */
 
-void apply_room_update (char * name)  {
+int apply_room_update (char * name)  {
   char        distrolist[MAX_GROUP_NAME];
   room_info   new_room;
   
@@ -196,7 +196,7 @@ void apply_room_update (char * name)  {
   }
 }
 
-void apply_chat_update (chat_entry * ce, lts_entry * ts) {
+int apply_chat_update (chat_entry * ce, lts_entry * ts) {
   Message   out_msg;
   chat_info new_chat;
   chat_ll   *chat_list;
@@ -233,7 +233,8 @@ void apply_chat_update (chat_entry * ce, lts_entry * ts) {
   send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
 }
 
-void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
+int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
+  Message   out_msg;
   update      *mu;
   chat_entry  *ce;
   room_info   *rm;
@@ -244,9 +245,12 @@ void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char actio
   
   /* Grab the original chat update referenced by the like */
   mu = update_ll_get_inorder(&updates, ref);
+  if (mu == NULL) {
+    logdb("Update does not exist locally.\n");
+  }
   if (mu->tag != CHAT) {
     logerr("ERROR! Reference to non-chat update\n");
-    exit(1);
+    return 0;
   }
 
   /* Determine the room associated with the chat being liked */
@@ -256,17 +260,31 @@ void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char actio
   /* Grab the list of chats for the room */ 
   chat_list = &(rm->chats);
   if (!chat_list) {
-    logdb("ERROR! Chat list does not exist for this room\n");
-    exit(1); 
+    logerr("ERROR! Chat list does not exist for this room\n");
+    return 0; 
   }
 
   /* Grab the chat_info and update its like list */
   ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
   like_list = &(ch->likes);
+  like_ll_print(like_list);
 
   if (like_ll_get_inorder_fromback(like_list, like_lts) == 0) {
+
+    if (does_like(like_list, user) && action == ADD_LIKE) {
+      loginfo("User cannot like a chat s/he already likes!\n");
+      // TODO: Return LIKE-REJECT MSG to client
+      return 0;
+    }
+
+    if (!does_like(like_list, user) && action == REM_LIKE) {
+      loginfo("User cannot remove a like a non-liked chat\n");
+      // TODO: Return LIKE-REJECT MSG to client
+      return 0;
+    }
+
     /* Build the new like */
-    strcpy(new_like.user, user);
+    strcpy(new_like.user, user);  
     new_like.action = action;
     new_like.lts = like_lts;
 
@@ -274,9 +292,15 @@ void apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char actio
     like_ll_insert_inorder_fromback(like_list, new_like);
     like_ll_print(like_list);
   }
+  
+    /* Send a message to the distro group for this room */ 
+  prepareLikeMsg(&out_msg, user, like_lts, action, ref);
+  send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+
+  return 1;
 }
 
-void apply_update (update * u) {
+int apply_update (update * u) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
@@ -297,6 +321,7 @@ void apply_update (update * u) {
   switch (u->tag)  {
     case ROOM: 
       re = (room_entry *) &(u->entry);
+      logdb("Applying room update on %s\n", re->room);
       apply_room_update (re->room);
       break;
 		
@@ -313,6 +338,7 @@ void apply_update (update * u) {
     default:
       logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
     }
+    return 1;
 }
 
 void send_history_to_client(char *roomname, char *client) {
@@ -396,7 +422,11 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       lm = (LikeMessage *) mess.payload;
       logdb("LIKE Request from user: <%s> on client: <%s>", lm->user, client);
       logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
+      
       build_likeEntry(lm->user, lm->ref, lm->action);
+      
+      // TODO: MAY NEED TO RTN SUCCESS on APPLY_UPDATE; FOR LIKEs
+        // ONLY SEND IF APPLY_UPDATE RETURNS SUCCESS
       apply_update(out_update);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
@@ -410,12 +440,14 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 }
 
 void handle_server_update() {
-  update         new_update;
+  update         new_update, *mu;
   JoinMessage    *jm;
   AppendMessage  *am;
   //HistoryMessage *hm;
-  //LikeMessage 	 *lm;
+  LikeMessage 	 *lm;
   chat_entry     *ce;
+  like_entry     *le;
+
 	
   logdb("Received '%c' Update from server\n", mess.tag);
 
@@ -430,7 +462,6 @@ void handle_server_update() {
       strcpy(new_update.entry, jm->room);
       
       logdb("  New Room <%s> from server group\n", jm->room);
-      apply_update(&new_update);
       break;
       
     case APPEND_MSG:
@@ -448,18 +479,31 @@ void handle_server_update() {
       strcpy(ce->text, am->text);
 
       logdb("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
-      apply_update(&new_update);
-      
       break;  
       
     case LIKE_MSG:
-      // TODO handle a like msg!
+
+      lm = (LikeMessage *) mess.payload;
+      
+      /*  Create a new data log entry */
+      new_update.tag = LIKE;
+      new_update.lts.pid = lm->lts.pid;
+      new_update.lts.ts = lm->lts.ts;
+
+      le = (like_entry *) &(new_update.entry);
+      strcpy(le->user, lm->user);
+      le->action = lm->action;
+      le->lts = lm->ref;
+
+      logdb("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
+
       break;
       
     default:
       logerr("ERROR! Received a non-update from server\n");
       exit(1);
   }
+  apply_update(&new_update);
 }
 
 void Initialize (char * server_index) {
