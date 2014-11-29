@@ -32,8 +32,9 @@ typedef struct Message {
 } Message;
 
 typedef struct LTSVectorMessage {
-	lts_entry		lts[MAX_SERVERS];
-} LTS_Vector_Message;
+        unsigned  int sender;
+	unsigned  int lts[MAX_SERVERS];
+} LTSVectorMessage;
 
 typedef struct JoinMessage {
 	char	user[NAME_LEN];

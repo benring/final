@@ -5,7 +5,7 @@
 #include "update_ll.h"
 #include "like_ll.h"
 #include "room_ll.h"
-
+#include <limits.h>
 #define ALL_SERVER_GROUP "server-all"
 
 #define INIT 0
@@ -50,6 +50,12 @@ static  int             	num_connected_clients = 0;
 static	update				*out_update;
 
 static FILE                             *logfile;
+static unsigned int         my_vector[MAX_SERVERS];
+static unsigned int         expected_vectors[MAX_SERVERS];
+static unsigned int         my_responsibility[MAX_SERVERS];
+static unsigned int         min_lts_vector[MAX_SERVERS];
+static unsigned int         max_lts_vector[MAX_SERVERS];
+
 
 //static 	FILE            	*sink;
 //static 	char            	dest_file[10];
@@ -98,11 +104,37 @@ int main (int argc, char *argv[])  {
 
 #include "utils.h"
 
+void update_my_vector() {
+  int i = 0;
+  update_ll_node *curr;
+  /* Reset vector */
+  for(i = 0; i < MAX_SERVERS; i++) {
+    my_vector[i] = 0;
+  }
+
+  /* Compute vector from updates. This can be optimized */
+  /* Best solution is to search from the back until we get 1 update from each server */
+  curr = updates.first;
+  while (curr) {
+    my_vector[curr->data.lts.pid] = curr->data.lts.ts;
+    curr = curr->next;
+  }
+
+  printf("My vector:\n");
+  for(i = 0; i < MAX_SERVERS; i++) {
+    printf("%d ", my_vector[i]);
+  }
+  printf("\n");
+
+  return;
+}
+
 void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   Message out_msg;
   /* Re-compute the connected server list */
   int new_connected_svr[MAX_SERVERS];
   int i;
+  int new_members = FALSE;
   for (i=0; i<MAX_SERVERS; i++) {
     new_connected_svr[i] = FALSE;
   }
@@ -120,6 +152,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       int joined = FALSE;
       if (diff == 1) {
         joined = TRUE;
+        new_members = TRUE;
       }
       char* status_change_msg = (joined) ? "JOINED" : "LEFT";
       loginfo("  Server %d has %s the server-group \n", i+1, status_change_msg);
@@ -137,6 +170,43 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   logdb("Sending updated list of servers to all clients\n");
 
   /* TODO reconcie! */
+  if (new_members) {
+    my_state = RECONCILE;
+    update_my_vector();
+
+    /* Expect an additional vector from each server */
+    for (i=0; i < MAX_SERVERS; i++) {
+      if (connected_svr[i]) {
+        expected_vectors[i]++;
+      }
+    }
+
+    /* Send out my vector */
+    out_msg.tag = LTS_VECTOR;
+    LTSVectorMessage *ltsm;
+    ltsm = &(out_msg.payload);
+    ltsm->sender = me; 
+    for (i = 0; i < MAX_SERVERS; i++) {
+      ltsm->lts[i] = my_vector[i]; 
+    }
+
+    /* Handle my own vector since it wont be received */
+    expected_vectors[me]--;
+    
+    for (i=0; i < MAX_SERVERS; i++) { 
+      if (my_vector[i] < min_lts_vector[i]) {
+        min_lts_vector[i] = my_vector[i];
+      }
+
+      if (max_lts_vector[i] == 0 || my_vector[i] > max_lts_vector[i]) {
+        max_lts_vector[i] = my_vector[i];
+      }
+    }
+
+    logdb("Sending my lts vector\n");
+    send_message(mbox, server_group, &out_msg, sizeof(Message));
+  }
+
   Reconcile();
 }
 
@@ -501,10 +571,14 @@ void handle_server_update() {
   JoinMessage    *jm;
   AppendMessage  *am;
   //HistoryMessage *hm;
+  LTSVectorMessage *ltsm;
   LikeMessage 	 *lm;
   chat_entry     *ce;
   like_entry     *le;
-
+  int sum = 0;
+  int i;
+  int shouldApply = TRUE;
+  update_ll_node *curr_update;
 	
   logdb("Received '%c' Update from server\n", mess.tag);
 
@@ -555,12 +629,90 @@ void handle_server_update() {
       logdb("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
 
       break;
+    case LTS_VECTOR:
+      shouldApply = FALSE;
+
+      if (my_state != RECONCILE) {
+        logerr("ERROR received vector when not in reconcile state\n");
+      }
+
+      ltsm = (LTSVectorMessage *) mess.payload;
+      logdb(" RECEIVED AN LTS VECTOR FROM %d\n", ltsm->sender);
+      for (i=0; i < MAX_SERVERS; i++) {
+        logdb("  %d", ltsm->lts[i]);
+      }
+      logdb("\n");
+      expected_vectors[ltsm->sender]--;
+      
+      for(i=0; i < MAX_SERVERS; i++) {
+        sum += expected_vectors[i];
+        my_responsibility[i] = 0;
+
+        if (ltsm->lts[i] < min_lts_vector[i]) {
+          min_lts_vector[i] = ltsm->lts[i]; 
+        }
+        if (max_lts_vector[i] == 0 || ltsm->lts[i] > max_lts_vector[i]) {
+          max_lts_vector[i] = ltsm->lts[i];
+        }
+      }
+
+      if (sum == 0) {
+        /* Send out missing updates */
+        for (i = 0; i < MAX_SERVERS; i++) {
+          if (i == me && max_lts_vector[i] != 0) {
+            my_responsibility[i] = TRUE;
+          }
+          // TODO this may cause multiple senders.
+          // we can fix this by storing the pid along with the max LTS
+          // and only that pid should send
+          if (max_lts_vector[i] != 0 && my_vector[i] >= max_lts_vector[i] && !connected_svr[i]) {
+            my_responsibility[i] = TRUE;
+          }
+        }
+
+        logdb("Calculating updates to send: \n"); 
+        
+        for (i = 0; i < MAX_SERVERS; i++) {
+           logdb ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i], max_lts_vector[i]);
+        }
+
+        for (i = 0; i < MAX_SERVERS; i++) {
+          if(my_responsibility[i]) {
+            logdb("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i], max_lts_vector[i]);
+          }
+        }
+
+        int currpid;
+        int currts;
+        /* Send out updates */ 
+        curr_update = updates.first;
+        while(curr_update) {
+          currpid = curr_update->data.lts.pid;
+          currts = curr_update->data.lts.ts;
+          if (my_responsibility[currpid]) {
+            if(currts <= max_lts_vector[currpid] && currts >= min_lts_vector[currpid]) {
+              logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
+              // TODO construct and send a message
+              // send_message()
+            }
+            
+          }
+          curr_update = curr_update->next;
+        }
+
+      }
+
+      break;
       
     default:
       logerr("ERROR! Received a non-update from server\n");
       exit(1);
   }
-  apply_update(&new_update, TRUE);
+
+  // Hack for now. dont apply an LTS Vector, for example.
+  if (shouldApply) {
+    apply_update(&new_update, TRUE);
+  }
 }
 
 
@@ -593,6 +745,9 @@ void Initialize (char * server_index) {
     strcpy(server_name[i], "server-");
     server_name[i][7] = (char)(1 + i + (int)'0');
     connected_svr[i] = FALSE;
+    expected_vectors[i] = 0;
+    min_lts_vector[i] = UINT_MAX;
+    max_lts_vector[i] = 0;
   }
   
   /* Do other program initialization */
