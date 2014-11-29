@@ -49,6 +49,8 @@ static  int             	num_connected_clients = 0;
 
 static	update				*out_update;
 
+static FILE                             *logfile;
+
 //static 	FILE            	*sink;
 //static 	char            	dest_file[10];
 
@@ -72,6 +74,12 @@ int main (int argc, char *argv[])  {
   /* Initiate Membership join  */
   logdb("[TRANSITION] Entering READY state\n");
   my_state = READY;
+  
+  /* Read the log file */ 
+  logfile = fopen("/tmp/log.txt", "a+b");
+  fseek(logfile, 0, SEEK_SET);
+  recover_from_disk(&updates);
+
   join_group(mbox, server_group);
   join_group(mbox, client_group);
   join_group(mbox, server_name[me]);
@@ -81,6 +89,7 @@ int main (int argc, char *argv[])  {
   my_state = RUN;
   E_attach_fd(mbox, READ_FD, Run, 0, NULL, HIGH_PRIORITY );
   E_handle_events();
+  fclose(logfile);
 
   disconn_spread(mbox);
 
@@ -197,6 +206,8 @@ int apply_room_update (char * name)  {
 }
 
 int apply_chat_update (chat_entry * ce, lts_entry * ts) {
+  // TODO: always send out the updates? even during recovery?
+  // seems redundant. but maybe necessary if we crashed
   Message   out_msg;
   chat_info new_chat;
   chat_ll   *chat_list;
@@ -304,10 +315,52 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   return 1;
 }
 
-int apply_update (update * u) {
+int log_update(update *u) {
+  if (logfile) {
+    if (fwrite(u, sizeof(update), 1, logfile) == 1) {
+      fflush(logfile);
+      return TRUE;
+    }
+    else {
+      logerr("Failed to log update to disk\n");
+      exit(1);
+    }
+  } 
+  else {
+    logerr("ERROR: log file is not open. can't log update\n");
+    exit(1);
+  }
+
+}
+
+int recover_from_disk(update_ll *list) {
+  update curr_update;
+  int num_in_log = 0;
+
+  if(!logfile) {
+    logerr("Cannot recover from disk. File is invalid\n");
+    exit(1);
+  }
+
+  while (fread(&curr_update, sizeof(update), 1, logfile) == 1) {
+    update_ll_insert_inorder_fromback(list, curr_update);
+    apply_update(&curr_update, FALSE);
+    num_in_log++;
+  }
+  printf("Recovered %d Updates\n", num_in_log);
+  return num_in_log;
+}
+
+
+int apply_update (update * u, int shouldLog) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
+
+  if (shouldLog) {
+    log_update(u);
+    printf("Logging update!\n");
+  }
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -405,7 +458,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       jm = (JoinMessage *) mess.payload;
       logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", jm->user, client, jm->room);
       build_roomEntry(jm->room);
-      apply_update(out_update);
+      apply_update(out_update, TRUE);
       prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       send_history_to_client(jm->room, client);
@@ -416,7 +469,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       am = (AppendMessage *) mess.payload;
       logdb("APPEND Request from user: <%s> on client: <%s>, for room <%s>. Msg is '%s'\n", am->user, client, am->room, am->text);
       build_chatEntry(am->user, am->room, am->text);
-      apply_update(out_update);
+      apply_update(out_update, TRUE);
       prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       break;
@@ -431,7 +484,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       
       // TODO: MAY NEED TO RTN SUCCESS on APPLY_UPDATE; FOR LIKEs
         // ONLY SEND IF APPLY_UPDATE RETURNS SUCCESS
-      apply_update(out_update);
+      apply_update(out_update, TRUE);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       break;
@@ -507,8 +560,9 @@ void handle_server_update() {
       logerr("ERROR! Received a non-update from server\n");
       exit(1);
   }
-  apply_update(&new_update);
+  apply_update(&new_update, TRUE);
 }
+
 
 void Initialize (char * server_index) {
   int 		i;
@@ -549,6 +603,7 @@ void Initialize (char * server_index) {
   update_message.tag = UPDATE;
   out_update = (update *) &(update_message.payload);
   out_update->lts.pid = me;
+
 }
 
 static	void	Reconcile() {return;}

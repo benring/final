@@ -44,3 +44,4 @@ ELEM* update_ll_get_inorder(update_ll *list, lts_entry lts);
 /* Search an ordered list for an lts from the back, terminates early  (assuming list is in order) */
 ELEM* update_ll_get_inorder_fromback(update_ll *list, lts_entry lts);
 #endif
+
