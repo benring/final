@@ -37,6 +37,7 @@ void chat_ll_print(chat_ll* list) {
 void chat_ll_print_num(chat_ll* list, int num) {
   int   index = 0;
   int   display_min = list->size - num;
+  int count = 0;
 
   if (chat_ll_is_empty(list)) {
     printf("Empty List\n");
@@ -47,8 +48,10 @@ void chat_ll_print_num(chat_ll* list, int num) {
 //      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
       if (index++ >= display_min) {
         printf("%d. [%s]: %-80s", index, &(curr->data.chat.user[3]), curr->data.chat.text);
-        if (curr->data.likes.count > 0) {
-          printf("Likes: %d", curr->data.likes.count);
+        count = like_ll_count_likes(&curr->data.likes);
+
+        if (count > 0) {
+          printf("Likes: %d", count);
         }
         printf("\n");
       }

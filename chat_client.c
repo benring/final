@@ -155,7 +155,8 @@ void process_server_message() {
       ch = chat_ll_get_inorder(&chat_room, lm->ref);
 //      logdb("Printing Like List for LTS (%d, %d):\n", lm->ref.ts, lm->ref.pid);
 //      like_ll_print(&(ch->likes));
-      like_ll_append(&(ch->likes), *le);
+//      like_ll_append(&(ch->likes), *le);
+      like_ll_update_like(&(ch->likes), le->user, le->lts, le->action); 
 //      logdb("Printing Like List for LTS (%d, %d):\n", lm->ref.ts, lm->ref.pid);
 //      like_ll_print(&(ch->likes));
     

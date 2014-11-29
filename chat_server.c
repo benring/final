@@ -253,12 +253,14 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   chat_info   *ch;
   like_ll     *like_list;
   like_entry  new_like;
+  like_entry  *old_like;
   
   /* Grab the original chat update referenced by the like */
   logdb("Getting room for LTS Ref (%d, %d)\n", ref.ts, ref.pid);
   mu = update_ll_get_inorder(&updates, ref);
   if (mu == NULL) {
     logdb("Update does not exist locally.\n");
+    // TODO this may happen after a partition
   }
   if (mu->tag != CHAT) {
     logerr("ERROR! Reference to non-chat update\n");
@@ -283,30 +285,24 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   like_list = &(ch->likes);
   like_ll_print(like_list);
 
-  if (like_ll_get_inorder_fromback(like_list, like_lts) == 0) {
+  like_ll_update_like(like_list, user, like_lts, action);
 
-    if (does_like(like_list, user) && action == ADD_LIKE) {
-      loginfo("User cannot like a chat s/he already likes!\n");
-      // TODO: Return LIKE-REJECT MSG to client
-      return 0;
-    }
+  like_ll_print(like_list);
 
-    if (!does_like(like_list, user) && action == REM_LIKE) {
-      loginfo("User cannot remove a like a non-liked chat\n");
-      // TODO: Return LIKE-REJECT MSG to client
-      return 0;
-    }
+    // TODO I think both of these things can happen after a partition
+    // So maybe checks can be client side only
+    //if (does_like(like_list, user) && action == ADD_LIKE) {
+    //  loginfo("User cannot like a chat s/he already likes!\n");
+    //  // TODO: Return LIKE-REJECT MSG to client
+    //  return 0;
+    //}
 
-    /* Build the new like */
-    logdb("New like occured at LTS (%d, %d)\n", like_lts.ts, like_lts.pid);
-    strcpy(new_like.user, user);  
-    new_like.action = action;
-    new_like.lts = like_lts;
+    //if (!does_like(like_list, user) && action == REM_LIKE) {
+    //  loginfo("User cannot remove a like a non-liked chat\n");
+    //  // TODO: Return LIKE-REJECT MSG to client
+    //  return 0;
+    //}
 
-    /* insert it to the like list */
-    like_ll_insert_inorder_fromback(like_list, new_like);
-    like_ll_print(like_list);
-  }
   
     /* Send a message to the distro group for this room */ 
   prepareLikeMsg(&out_msg, user, ref, action, like_lts);
@@ -403,6 +399,9 @@ void send_history_to_client(char *roomname, char *client) {
   chat_info    *chat;
   chat_ll_node *curr_chat_node;
   Message      out_msg;
+  like_ll      *likes;
+  like_ll_node *curr_like_node;
+  like_entry   *like;
   
   room = room_ll_get(&rooms, roomname);
   if (!room) {
@@ -415,17 +414,16 @@ void send_history_to_client(char *roomname, char *client) {
     chat = &(curr_chat_node->data);
     prepareAppendMsg(&out_msg, chat->chat.room, chat->chat.user, chat->chat.text, chat->lts);
     send_message(mbox, client, (char *) &out_msg, sizeof(Message));
-       
-        // TODO send likes!
-        /*  
-         * curr_like = new_chat->likes
-         * while (curr_like) {
-         *   new_like = curr_like->data;
-         *   prepareLikeMsg()
-         *   send_message()
-         *   curr_like = curr_like->next;
-         * }
-         */
+
+    likes = &(chat->likes);
+    curr_like_node = likes->first;
+    while(curr_like_node) {
+      like = &(curr_like_node->data);
+      prepareLikeMsg(&out_msg, like->user, chat->lts, like->action, like->lts);
+      send_message(mbox, client, (char *) &out_msg, sizeof(Message));
+      curr_like_node = curr_like_node->next;
+    }
+
     curr_chat_node = curr_chat_node->next;
   }
 }

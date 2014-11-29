@@ -14,7 +14,6 @@ typedef struct like_ll_node {
 typedef struct like_ll {
   like_ll_node* first;
   like_ll_node* last;
-  int           count;
 } like_ll;
 
 /* Create an empty list */
@@ -44,5 +43,11 @@ like_entry* like_ll_get_inorder(like_ll *list, lts_entry lts);
 /* Search an ordered list for an lts from the back, terminates early  (assuming list is in order) */
 like_entry* like_ll_get_inorder_fromback(like_ll *list, lts_entry lts);
 
+like_entry* like_ll_get_user(like_ll *list, char *user);
+
+int like_ll_count_likes(like_ll *list);
+
 int does_like (like_ll *list, char * name);
+
+int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char action);
 #endif

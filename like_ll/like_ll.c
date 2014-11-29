@@ -7,7 +7,6 @@ like_ll like_ll_create() {
   like_ll result;
   result.first = 0;
   result.last = 0;
-  result.count = 0;
   return result;
 }
 
@@ -58,14 +57,6 @@ int like_ll_append(like_ll* list, like_entry data) {
     list->last = node;
   }
   
-  /* Increase count for a ADD_LIKE, decrement for a REM_LIKE */
-  if (node->data.action == ADD_LIKE) {
-    list->count++;
-  }
-  else {
-    list->count--;
-  }
-
   return 1; /* success */
 }
 
@@ -115,13 +106,6 @@ int like_ll_insert_inorder(like_ll* list, like_entry data) {
     curr->prev = node;
   }
   
-  /* Increase count for a ADD_LIKE, decrement for a REM_LIKE */
-  if (curr->data.action == ADD_LIKE) {
-    list->count++;
-  }
-  else {
-    list->count--;
-  }
   return 1; 
 }
 
@@ -170,13 +154,6 @@ int like_ll_insert_inorder_fromback(like_ll* list, like_entry data) {
 
     next->prev = node;
     curr->next = node;
-  }
-  /* Increase count for a ADD_LIKE, decrement for a REM_LIKE */
-  if (curr->data.action == ADD_LIKE) {
-    list->count++;
-  }
-  else {
-    list->count--;
   }
     
   return 1; 
@@ -246,31 +223,88 @@ like_entry* like_ll_get_inorder_fromback(like_ll* list, lts_entry lts) {
 }
 
 int does_like (like_ll *list, char * name) {
-  int result = 0;
   like_ll_node* curr;
+
   if (like_ll_is_empty(list)) {
-    return result;
+    return FALSE;
   }
   like_ll_print(list);
 
   curr = list->first;
   while(curr) {
-    printf("Comp: %s, %s\n", curr->data.user, name);
     if(strcmp(curr->data.user, name) == 0) {
       if (curr->data.action == ADD_LIKE) {
-        logdb("%s Likes it\n");
-        result++;
+        return TRUE;
       }
       else {
-        logdb("%s Un-Likes it\n");
-        result--;
+        return FALSE;
       }
     }
     curr = curr->next;
   }
-  printf("Does Like result = %d\n", result);
-  if (result > 0) {
-    return TRUE;
+  return FALSE;
+}
+
+like_entry* like_ll_get_user(like_ll *list, char *user) {
+
+  like_entry* result = 0;
+  like_ll_node* curr;
+  if (like_ll_is_empty(list)) {
+    return result;
   }
+
+  curr = list->first;
+  while(curr) {
+    if(strcmp(curr->data.user, user) == 0) {
+      result = &curr->data;
+      return result;
+    }
+    curr = curr->next;
+  }
+  
   return result;
+}
+
+int like_ll_count_likes(like_ll *list) {
+  int count = 0;
+  like_ll_node* curr;
+  if (like_ll_is_empty(list)) {
+    return count;
+  }
+
+  curr = list->first;
+  while(curr) {
+    if (curr->data.action == ADD_LIKE) {
+      count++;
+    }
+    curr = curr->next;
+  }
+  return count;
+}
+
+int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char action) {
+  like_entry *old_like;
+  like_entry new_like;
+
+  /* Check the user's current like status */
+  old_like = like_ll_get_user(like_list, user);
+  if (old_like && lts_greaterthan(like_lts, old_like->lts)) {
+    logdb("Updating like status from %c to %c for user %s\n", old_like->action, action, user);
+    old_like->lts = like_lts;
+    old_like->action = action;
+  }
+  else {
+  
+    /* Build the new like */
+    logdb("New like occured at LTS (%d, %d)\n", like_lts.ts, like_lts.pid);
+    
+    strcpy(new_like.user, user);  
+    new_like.action = action;
+    new_like.lts = like_lts;
+
+    /* insert it to the like list */
+    like_ll_insert_inorder_fromback(like_list, new_like);
+  }
+
+  return TRUE;
 }
