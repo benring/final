@@ -353,10 +353,6 @@ int apply_update (update * u, int shouldLog) {
   chat_entry  *ce;
   like_entry  *le;
 
-  if (shouldLog) {
-    log_update(u);
-    printf("Logging update!\n");
-  }
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -366,6 +362,12 @@ int apply_update (update * u, int shouldLog) {
   /* Do not process any duplicate updates EVER */
   if (update_ll_get_inorder_fromback(&updates, u->lts)) {
     logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
+    return;
+  }
+  
+  if (shouldLog) {
+    log_update(u);
+    printf("Logging update!\n");
   }
 
   /* Insert into the list of updates */
