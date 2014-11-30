@@ -33,6 +33,7 @@ static	Message			update_message;
 static 	unsigned int		me;
 static  char    		my_server_id;
 static  char				server_name[MAX_SERVERS][MAX_GROUP_NAME];
+static  char				server_inbox[MAX_SERVERS][MAX_GROUP_NAME];
 static	char				server_group[MAX_GROUP_NAME];
 static	char				client_group[MAX_GROUP_NAME];
 
@@ -50,15 +51,15 @@ static  int             	num_connected_clients = 0;
 static	update				*out_update;
 
 static FILE                             *logfile;
+static char                 logfilename[NAME_LEN];
 static unsigned int         my_vector[MAX_SERVERS];
 static unsigned int         expected_vectors[MAX_SERVERS];
 static unsigned int         my_responsibility[MAX_SERVERS];
 static unsigned int         min_lts_vector[MAX_SERVERS];
 static unsigned int         max_lts_vector[MAX_SERVERS];
+static unsigned int         all_svr_lts_vectors[MAX_SERVERS][MAX_SERVERS];
 
 
-//static 	FILE            	*sink;
-//static 	char            	dest_file[10];
 
 
 int main (int argc, char *argv[])  {
@@ -82,9 +83,10 @@ int main (int argc, char *argv[])  {
   my_state = READY;
   
   /* Read the log file */ 
-  logfile = fopen("/tmp/log.txt", "a+b");
-  fseek(logfile, 0, SEEK_SET);
-  recover_from_disk(&updates);
+  if (logfile = fopen(logfilename, "a+b")) {
+    fseek(logfile, 0, SEEK_SET);
+    recover_from_disk(&updates);
+  }
 
   join_group(mbox, server_group);
   join_group(mbox, client_group);
@@ -131,9 +133,12 @@ void update_my_vector() {
 
 void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   Message out_msg;
+  LTSVectorMessage *ltsm;
+
   /* Re-compute the connected server list */
   int new_connected_svr[MAX_SERVERS];
   int i;
+  int joined;
   int new_members = FALSE;
   for (i=0; i<MAX_SERVERS; i++) {
     new_connected_svr[i] = FALSE;
@@ -143,13 +148,15 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   for (i=0; i<num_members; i++) {
     int server_num = get_server_num(members[i]);
     new_connected_svr[server_num] = TRUE;
+    strcpy(server_inbox[i],  members[i]);
+    logdb("Server #%d: Private MSG inbox is %s", i, server_inbox[i]);
   }
 
   /* Compare to previous members */
   for (i=0; i<MAX_SERVERS; i++) {
     int diff = new_connected_svr[i] - connected_svr[i];
     if (diff != 0) {
-      int joined = FALSE;
+      joined = FALSE;
       if (diff == 1) {
         joined = TRUE;
         new_members = TRUE;
@@ -169,7 +176,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   send_message(mbox, client_group, (char *) &out_msg, sizeof(Message));
   logdb("Sending updated list of servers to all clients\n");
 
-  /* TODO reconcie! */
+  /* TODO reconcile! */
   if (new_members) {
     my_state = RECONCILE;
     update_my_vector();
@@ -183,7 +190,6 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
     /* Send out my vector */
     out_msg.tag = LTS_VECTOR;
-    LTSVectorMessage *ltsm;
     ltsm = &(out_msg.payload);
     ltsm->sender = me; 
     for (i = 0; i < MAX_SERVERS; i++) {
@@ -409,7 +415,6 @@ int recover_from_disk(update_ll *list) {
   }
 
   while (fread(&curr_update, sizeof(update), 1, logfile) == 1) {
-    update_ll_insert_inorder_fromback(list, curr_update);
     apply_update(&curr_update, FALSE);
     num_in_log++;
   }
@@ -465,6 +470,55 @@ int apply_update (update * u, int shouldLog) {
     }
     return 1;
 }
+
+
+
+void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
+  Message out_msg;
+  room_entry  *re;
+  chat_entry  *ce;
+  like_entry  *le;
+  int         i;
+
+  switch (u->tag)  {
+    case ROOM: 
+      re = (room_entry *) &(u->entry);
+      logdb("Resending room update on %s\n", re->room);
+      prepareJoinMsg (&out_msg, re->room, "RECONCILE", u->lts);
+      break;
+		
+    case CHAT:
+      ce = (chat_entry *) &(u->entry);
+      logdb("Resending chat append msg: '%s' said \"%s\" in room <%s>\n", 
+        ce->user, ce->text, ce->room);
+      prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, u->lts);
+      break;
+			
+    case LIKE:
+      le = (like_entry *) &(u->entry);
+      logdb("Resending like msg: '%s'  did a %c-LIKE on chat-LTS (%d, %d)\n", 
+        le->user, le->action, le->lts.ts, le->lts.pid);
+      prepareLikeMsg(&out_msg, le->user, le->lts, le->action, u->lts);
+      
+      break;
+		
+    default:
+      logerr("ERROR! Bad update in the update log, tag was %c\n", u->tag);
+      return;
+    }
+    // FOR NOW:  default to send to all servers
+    send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
+
+    /* TODO:  Accept a list of servers to send to and only send to those:
+     * 
+    for (i=0; i<MAX_SERVERS; i++) {
+      if (recv_svr[i]) {
+        send_message(mbox, server_inbox[i], (char *)&out_msg, sizeof(Message));
+      }
+    }
+     */
+}
+
 
 void send_history_to_client(char *roomname, char *client) {
   room_info    *room;
@@ -579,6 +633,7 @@ void handle_server_update() {
   int i;
   int shouldApply = TRUE;
   update_ll_node *curr_update;
+  int           send_svr_update[MAX_SERVERS];
 	
   logdb("Received '%c' Update from server\n", mess.tag);
 
@@ -640,6 +695,10 @@ void handle_server_update() {
       logdb(" RECEIVED AN LTS VECTOR FROM %d\n", ltsm->sender);
       for (i=0; i < MAX_SERVERS; i++) {
         logdb("  %d", ltsm->lts[i]);
+        /* Update global svr_lts tracker -- for sending updates */
+        if (ltsm->lts[i] > all_svr_lts_vectors[ltsm->sender][i]) {
+          all_svr_lts_vectors[ltsm->sender][i] = ltsm->lts[i];
+        }
       }
       logdb("\n");
       expected_vectors[ltsm->sender]--;
@@ -692,8 +751,21 @@ void handle_server_update() {
           if (my_responsibility[currpid]) {
             if(currts <= max_lts_vector[currpid] && currts >= min_lts_vector[currpid]) {
               logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
-              // TODO construct and send a message
-              // send_message()
+              
+              /* Only send to servers who need the update */
+              for (i=0; i<MAX_SERVERS; i++) {
+                send_svr_update[i] = FALSE;
+                if (i != me && currts < all_svr_lts_vectors[i][currpid]) {
+                  send_svr_update[i] = TRUE;
+                }
+              }
+              resend_update(&(curr_update->data), send_svr_update);
+
+              /* Resend the update */
+              /* TODO: Update resend_update to also accept a server_mask specifying specific
+                      servers which shoudl receive the updates 
+                 will need a simple for-loop here to determine that mask  */
+
             }
             
           }
@@ -759,6 +831,7 @@ void Initialize (char * server_index) {
   out_update = (update *) &(update_message.payload);
   out_update->lts.pid = me;
 
+	sprintf(logfilename, "log_%c.txt", my_server_id);
 }
 
 static	void	Reconcile() {return;}

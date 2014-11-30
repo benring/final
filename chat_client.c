@@ -673,6 +673,7 @@ void clear_room ()  {
     //  function or we need to free the mem)
     chat_room = chat_ll_create();
     attendees = client_ll_create();
+    displayed_attendees = name_ll_create();
   state = CONN;
 }
 

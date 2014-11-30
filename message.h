@@ -32,7 +32,7 @@ typedef struct Message {
 } Message;
 
 typedef struct LTSVectorMessage {
-        unsigned  int sender;
+  unsigned  int sender;
 	unsigned  int lts[MAX_SERVERS];
 } LTSVectorMessage;
 
