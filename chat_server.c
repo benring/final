@@ -13,6 +13,11 @@
 #define RUN 2
 #define RECONCILE 3
 
+#define DUPLICATE_UPDATE 1
+#define UNHANDLED_UPDATE 2
+#define PENDING_UPDATE 3
+#define SUCCESSFUL_UPDATE 4
+
 /* Forward Declared functions */
 static	void		Run();
 static	void		Reconcile();
@@ -44,6 +49,7 @@ static  int		        	connected_svr[MAX_SERVERS];
 static	unsigned int		lts;
 static  room_ll				rooms;
 static	update_ll			updates;
+static  update_ll                      *pending_updates;
 
 static  client_ll               connected_clients;
 static  int             	num_connected_clients = 0;
@@ -100,6 +106,7 @@ int main (int argc, char *argv[])  {
   fclose(logfile);
 
   disconn_spread(mbox);
+  free(pending_updates);
 
   return(0);
 }
@@ -268,9 +275,7 @@ int apply_room_update (char * name)  {
     room_ll_append(&rooms, new_room);
     logdb("NEW ROOM created, <%s>\n", new_room.name);
           
-    /*  Server JOINs 2 groups for a room:
-     *    1. Spread Distro group for to send updates to clients in the room
-     *    2. Spread Membership group for attendees  */
+    /*  Server JOINs 2 groups for a room: *    1. Spread Distro group for to send updates to clients in the room *    2. Spread Membership group for attendees  */
     	
     logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
     join_group(mbox, distrolist);
@@ -279,6 +284,8 @@ int apply_room_update (char * name)  {
   else {
     logdb("Room '%s' already exists", name);
   }
+
+  return SUCCESSFUL_UPDATE;
 }
 
 int apply_chat_update (chat_entry * ce, lts_entry * ts) {
@@ -291,12 +298,16 @@ int apply_chat_update (chat_entry * ce, lts_entry * ts) {
 
   /* Grab the room associated with this chat */
   rm = room_ll_get(&rooms, ce->room);
+  if (!rm) {
+    logdb("WARNING! Room does not exist for thsi chat\n");
+    return PENDING_UPDATE;
+  }
     
   /* Grab the list of chats for the room */
   chat_list = &(rm->chats);
   if (!chat_list) {
     logdb("ERROR! Chat list does not exist for this room\n");
-    exit(1);
+    return UNHANDLED_UPDATE;
   }
  
   /* Create and populte new chat_info */
@@ -313,11 +324,10 @@ int apply_chat_update (chat_entry * ce, lts_entry * ts) {
   	new_chat.chat.room, new_chat.lts.ts, new_chat.lts.pid, new_chat.chat.user, new_chat.chat.text);
   
   /* Append to chat list for this room */
-  chat_ll_insert_inorder_fromback(chat_list, new_chat);
-  
-  /* Send a message to the distro group for this room */ 
+  chat_ll_insert_inorder_fromback(chat_list, new_chat); /* Send a message to the distro group for this room */ 
   prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
   send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+  return SUCCESSFUL_UPDATE;
 }
 
 int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
@@ -337,10 +347,11 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   if (mu == NULL) {
     logdb("Update does not exist locally.\n");
     // TODO this may happen after a partition
+    return PENDING_UPDATE;
   }
   if (mu->tag != CHAT) {
     logerr("ERROR! Reference to non-chat update\n");
-    return 0;
+    return UNHANDLED_UPDATE;
   }
 
   /* Determine the room associated with the chat being liked */
@@ -351,7 +362,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   chat_list = &(rm->chats);
   if (!chat_list) {
     logerr("ERROR! Chat list does not exist for this room\n");
-    return 0; 
+    return UNHANDLED_UPDATE; 
   }
 
   /* Grab the chat_info and update its like list */
@@ -384,7 +395,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   prepareLikeMsg(&out_msg, user, ref, action, like_lts);
   send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
 
-  return 1;
+  return SUCCESSFUL_UPDATE;
 }
 
 int log_update(update *u) {
@@ -422,12 +433,66 @@ int recover_from_disk(update_ll *list) {
   return num_in_log;
 }
 
-
-int apply_update (update * u, int shouldLog) {
+int incorporate_into_state(update *u) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
 
+  int result;
+  switch (u->tag)  {
+    case ROOM: 
+      re = (room_entry *) &(u->entry);
+      logdb("Applying room update on %s\n", re->room);
+      result = apply_room_update (re->room);
+      break;
+		
+    case CHAT:
+      ce = (chat_entry *) &(u->entry);
+      result = apply_chat_update (ce, &(u->lts));
+      break;
+			
+    case LIKE:
+      le = (like_entry *) &(u->entry);
+      result = apply_like_update(le->lts, u->lts, le->user, le->action);
+      break;
+		
+    default:
+      logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
+      result = UNHANDLED_UPDATE;
+    }
+    return result;
+}
+
+void try_pending_updates() {
+  update_ll *newpending = malloc(sizeof(update_ll));
+  *newpending = update_ll_create();
+  update_ll_node *curr_node = pending_updates->first;
+  int result;
+  
+  logdb("Trying to apply pending updates. Before:\n");
+  update_ll_print(pending_updates);
+ 
+  while(curr_node) {
+    result = incorporate_into_state(&(curr_node->data)); 
+    if (result == SUCCESSFUL_UPDATE) {
+      logdb("Succesfully applied pending update: (%d, %d)\n", curr_node->data.lts.ts, curr_node->data.lts.pid)
+    }
+    else {
+      update_ll_insert_inorder_fromback(newpending, curr_node->data);
+    }
+
+    curr_node = curr_node->next;
+  }
+
+  // Swap lists
+  // TODO clear() function to free each node
+  free(pending_updates);
+  pending_updates = newpending;
+  logdb("After: ");
+  update_ll_print(pending_updates);
+}
+
+int apply_update (update * u, int shouldLog) {
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -437,7 +502,7 @@ int apply_update (update * u, int shouldLog) {
   /* Do not process any duplicate updates EVER */
   if (update_ll_get_inorder_fromback(&updates, u->lts)) {
     logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
-    return;
+    return DUPLICATE_UPDATE;
   }
   
   if (shouldLog) {
@@ -448,27 +513,15 @@ int apply_update (update * u, int shouldLog) {
   /* Insert into the list of updates */
   update_ll_insert_inorder_fromback(&updates, *u);
 
-  switch (u->tag)  {
-    case ROOM: 
-      re = (room_entry *) &(u->entry);
-      logdb("Applying room update on %s\n", re->room);
-      apply_room_update (re->room);
-      break;
-		
-    case CHAT:
-      ce = (chat_entry *) &(u->entry);
-      apply_chat_update (ce, &(u->lts));
-      break;
-			
-    case LIKE:
-      le = (like_entry *) &(u->entry);
-      apply_like_update(le->lts, u->lts, le->user, le->action);
-      break;
-		
-    default:
-      logerr("ERROR! Received bad update from server group, tag was %c\n", u->tag);
-    }
-    return 1;
+  int result;
+  result = incorporate_into_state(u);
+  if (result == SUCCESSFUL_UPDATE) {
+    try_pending_updates();
+  }
+  else if (result == PENDING_UPDATE) {
+    logdb("Inserting update into PENDING\n");
+    update_ll_insert_inorder_fromback(pending_updates, *u);
+  } 
 }
 
 
@@ -823,6 +876,8 @@ void Initialize (char * server_index) {
   }
   
   /* Do other program initialization */
+  pending_updates = malloc(sizeof(update_ll));
+  *pending_updates = update_ll_create();
   updates = update_ll_create();
   connected_clients = client_ll_create();
   lts = 0;
@@ -831,7 +886,7 @@ void Initialize (char * server_index) {
   out_update = (update *) &(update_message.payload);
   out_update->lts.pid = me;
 
-	sprintf(logfilename, "log_%c.txt", my_server_id);
+  sprintf(logfilename, "log_%c.txt", my_server_id);
 }
 
 static	void	Reconcile() {return;}
