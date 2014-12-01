@@ -51,6 +51,7 @@ static  client_ll attendees;
 static  name_ll   displayed_attendees;
 static  int       connected_server[MAX_SERVERS];
 static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
+static  int       dmesg = -1;
 
 
 void Initialize();
@@ -63,29 +64,37 @@ void display(int code) {
   
   if (code == 1) {
     logdb("Waiting to display\n");
-  }  else {
-
+  }
+  else {
+//    system("clear");
     loginfo("------------------------------------------\n");
-//    loginfo("  Current Status:  %s\n", state_label[state]);
-    if (state >= CONN) {
-      if (strlen(last_message) == 0) {
-        loginfo("  Connected to SERVER #%d\n", my_server+1);
-      }
-      else {
-        loginfo("  %s\n", last_message);
-      }
-      loginfo("------------------------------------------\n");
-    }
     if (state == RUN) {
         loginfo("ROOM:  %s\n", my_room);
         loginfo("Attendees");
         name_ll_print(&displayed_attendees);
         chat_ll_print_num(&chat_room, 25);
+        loginfo("------------------------------------------\n");
     }
-    loginfo("\n%s> ", &User[3]);
-    
-    fflush(stdout);
+    if (dmesg >= 0) {
+        loginfo("  %s\n", last_message);
+    }
+    else if (state < LOGG) {
+      loginfo(" Please select a user name\n");
+    }
+    else if (state < CONN) {
+      loginfo("  Please connect to a server\n");
+    }
+    else if (state < RUN) {
+      loginfo("  Please join a chat room\n");
+    }
+    else {
+        loginfo("  Connected to SERVER #%d\n", my_server+1);
+    }
+      loginfo("------------------------------------------\n");
   }
+  loginfo("\n%s> ", &User[3]);
+  dmesg = -1;
+  fflush(stdout);
 }
 
 void process_server_message() {
@@ -102,6 +111,7 @@ void process_server_message() {
   client_ll_node  *curr;
   char            client_name[MAX_GROUP_NAME];
   char            *user;
+  char            tmpmsg[80] = "";
 
 	
 	logdb("Received '%c' Update from server\n", in_msg.tag);
@@ -153,12 +163,7 @@ void process_server_message() {
       /* Get the referenced chat from the room */
       // TODO:  Error check when switching rooms & like come after for the prev. room
       ch = chat_ll_get_inorder(&chat_room, lm->ref);
-//      logdb("Printing Like List for LTS (%d, %d):\n", lm->ref.ts, lm->ref.pid);
-//      like_ll_print(&(ch->likes));
-//      like_ll_append(&(ch->likes), *le);
       like_ll_update_like(&(ch->likes), le->user, le->lts, le->action); 
-//      logdb("Printing Like List for LTS (%d, %d):\n", lm->ref.ts, lm->ref.pid);
-//      like_ll_print(&(ch->likes));
     
       break;
 
@@ -170,13 +175,14 @@ void process_server_message() {
       for (i=0; i<MAX_SERVERS; i++) {
         connected_server[i] = vm->connected_server[i];
       }
-      loginfo("CONNECTED servers:  [ ");
+      strcpy(last_message, "CONNECTED servers:  [ ");
       for (i=0; i<MAX_SERVERS; i++) {
         if (vm->connected_server[i]) {
-          loginfo(" <SVR %d>", i+1);
+          dmesg = sprintf(tmpmsg, " <SVR %d>", i+1);
+          strcat(last_message, tmpmsg);
         }
       }
-      loginfo("  ]\n");
+      strcat(last_message, "  ]\n");
       
       /* Update displayed attendee list for my_room based on connected svrs */
       curr = attendees.first;
@@ -223,7 +229,6 @@ void process_client_change(int num_members,
       client_ll_remove(&attendees, curr->data.name);    
 
       /*  Process unique usernames only */
-      // TODO:  Convert to just user name (joe vs 101joe)
       strcpy(client_name, curr->data.name);
       user = strtok(client_name, HASHTAG);
       
@@ -231,12 +236,11 @@ void process_client_change(int num_members,
        *        whose server is connected to our server */
       if (user[0] != 's') {
         client_server = (int)(user[0] - '1');
-//        logdb("(c+) Checking %s from server %d\n", user, client_server);
 
         if (connected_server[client_server] && 
             name_ll_search(&displayed_attendees, &user[3])) {
           name_ll_remove(&displayed_attendees, &user[3]);
-          printf("Client '%s' has LEFT room <%s>\n", &user[3], my_room);
+          dmesg = sprintf(last_message, "Client '%s' has LEFT room <%s>\n", &user[3], my_room);
         }
       }
     }
@@ -264,7 +268,7 @@ void process_client_change(int num_members,
         if (connected_server[client_server] && 
             !name_ll_search(&displayed_attendees, &user[3])) {
           name_ll_insert(&displayed_attendees, &user[3]);
-          printf("Client '%s' has JOINED room <%s> \n", &user[3], my_room);
+          dmesg = sprintf(last_message, "Client '%s' has JOINED room <%s> \n", &user[3], my_room);
         }
       }
     }
@@ -334,7 +338,7 @@ void Read_message() {
       }
       if (!server_alive) {
         /* Our server is disconnected */
-        loginfo("Server # %d is disconnected. Please connect to a different server\n.", my_server+1);
+        dmesg = sprintf(last_message, "Server # %d is disconnected. Please connect to a different server\n.", my_server+1);
         if (state == RUN) {
           leave_group(mbox, my_room);
           leave_group(mbox, my_room_distrolist);
@@ -353,7 +357,7 @@ void Read_message() {
 
   /* Bad message */
   else {
-    logdb("Received a BAD message\n");
+    logerr("Received a BAD message\n");
   }
   display(0);
   fflush(stdout);
@@ -366,7 +370,7 @@ void User_command()   {
 	char	group[MAX_GROUP_NAME];
 	char 	arg[CHAT_LEN];
 	int 	ret, i, like_num;
-	char 	client_id[3];
+	
 	
 	lts_entry	ref;
   chat_info   *ch;
@@ -385,15 +389,15 @@ void User_command()   {
 	case 'a':
 		ret = sscanf(&command[2], "%[^\n]s", arg);
 		if( ret < 1 )  {
-			printf("Proper usage is a <chat_text> \n");
+			dmesg = sprintf(last_message, "Proper usage is a <chat_text>");
 			break;
 		}
 		else if (state < RUN) {
-			loginfo("You must be logged in and joined to a room to chat.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to chat.");
 			break;
 		}
 		if (strlen(arg) > 80) {
-			printf(" Text chat too long (80 Char max). Truncating your chat\n");
+			dmesg = sprintf(last_message, " Text chat too long (80 Char max). Truncating your chat");
 		}
 		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
 		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
@@ -405,63 +409,38 @@ void User_command()   {
 	case 'c':
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1 || strlen(arg) > 1)  {
-			loginfo("Proper usage is c <server #> \n");
+			dmesg = sprintf(last_message, "Proper usage is c <server #> \n");
 			break;
 		}
 		else if (arg[0] < '1' || arg[0] > '5') {
-			loginfo("Please enter a valid server # between 1-5 \n");
+			dmesg = sprintf(last_message, "Please enter a valid server # between 1-5 \n");
 			break;
 		}
 		else if (state < LOGG) {
-			loginfo("You must select a username before connecting to a server\n");
+			dmesg = sprintf(last_message, "You must select a username before connecting to a server\n");
 			break;
 		}
     
    /*  Depart room, if joined to a room */
     if (state == RUN) {
       clear_room();
+      state = CONN;
     }
     /*  Disconnect from current server, if already connected */
-    if (state >= CONN) {
+    if (state == CONN) {
       leave_group(mbox, server_group);
       SP_disconnect(mbox);
       state = LOGG;
     }
-    my_server = atoi(arg) - 1;
-    
-		logdb ("CONNECT to Server <%s>\n", arg);
-		strcpy(server_group, SERVER_GROUP_PREFIX);
-		server_group[8] = arg[0];
-		
-		User[0] = arg[0];
 
-		i = 1;
-		/* Connect to Spread */
-		do {
-			if (i == 100)  {
-				SP_error(ret);
-				logerr("User is only allowed 100 clients per server!\n");
-				disconn_spread(mbox);
-			}
-			sprintf(client_id, "%02d", i++);
-			memcpy(&User[1], client_id, 2);
-			ret = connect_spread(&mbox, User, Private_group);
-		} while (ret != ACCEPT_SESSION);
+    login_server(atoi(arg));
 
-		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
-
-		join_group(mbox, server_group);
-		strcpy(server_inbox, SERVER_NAME_PREFIX);
-		server_inbox[7] = arg[0];
-    connected_server[my_server] = TRUE;
-		
-		state = CONN;
 		break;
 
   /* ------------- HISTORY --------------------------------------*/
 	case 'h':
 		if (state < RUN) {
-			loginfo("You must be logged in and joined to a room to request a chat history.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to request a chat history.\n");
 			break;
 		}
 		logdb ("Sending history request for <%s>\n", my_room);
@@ -473,12 +452,12 @@ void User_command()   {
   /* ------------- LIKE --------------------------------------*/
 	case 'l':
 		if (state < RUN) {
-			loginfo("You must be logged in and joined to a room to like a chat.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to like a chat.\n");
 			break;
 		}
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1)  {
-			loginfo("Proper usage is l <chat #> \n");
+			dmesg = sprintf(last_message, "Proper usage is l <chat #> \n");
 			break;
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
@@ -488,7 +467,7 @@ void User_command()   {
 		logdb ("Trying to Like Chat # <%d>, LTS: (%d,%d)\n", like_num,ref.ts, ref.pid);
     
     if (lts_eq(ref, null_lts)) {
-      loginfo("You cannot like a chat that does not exist.\n");
+      dmesg = sprintf(last_message, "You cannot like a chat that does not exist.\n");
       break;
     }
 
@@ -496,7 +475,7 @@ void User_command()   {
     logdb("Current Like list for this chat:\n");
     like_ll_print(&(ch->likes));
     if (does_like(&(ch->likes), &User[3])) {
-      loginfo("You cannot like a chat you already like.\n");
+      dmesg = sprintf(last_message, "You cannot like a chat you already like.\n");
       break;
     }
     
@@ -507,12 +486,12 @@ void User_command()   {
   /* ------------- REMOVE LIKE --------------------------------------*/
 	case 'r':
 		if (state < RUN) {
-			loginfo("You must be logged in and joined to a room to remove a like.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to remove a like.\n");
 			break;
 		}
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1)  {
-			loginfo("Proper usage is r <chat #> \n");
+			dmesg = sprintf(last_message, "Proper usage is r <chat #> \n");
 			break;
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
@@ -524,13 +503,13 @@ void User_command()   {
 
     
     if (lts_eq(ref, null_lts)) {
-      loginfo("You cannot Un-like a chat that does not exist.\n");
+      dmesg = sprintf(last_message, "You cannot Un-like a chat that does not exist.\n");
       break;
     }
 
     ch = chat_ll_get(&chat_room, ref);
     if (!does_like(&(ch->likes), &User[3])) {
-      loginfo("You cannot Un-like a chat you do not like.\n");
+      dmesg = sprintf(last_message, "You cannot Un-like a chat you do not like.\n");
       break;
     }
 
@@ -544,15 +523,15 @@ void User_command()   {
 	case 'j':
 		ret = sscanf(&command[2], "%s", arg);
 		if (state < CONN) {
-			loginfo("You must be logged in and connected to a server to join a room\n");
+			dmesg = sprintf(last_message, "You must be logged in and connected to a server to join a room\n");
 			break;
 		}
     else if( ret < 1 )  {
-			printf("Proper usage is j <room_name> \n");
+			dmesg = sprintf(last_message, "Proper usage is j <room_name> \n");
 			break;
 		}
 		else if (ret > MAX_GROUP_NAME) {
-			loginfo("Please use a name less than %d characters long\n", MAX_GROUP_NAME-12);
+			dmesg = sprintf(last_message, "Please use a name less than %d characters long\n", MAX_GROUP_NAME-12);
       break;
 		}
 
@@ -591,29 +570,47 @@ void User_command()   {
 		logdb("SETTING USERNAME\n");
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1) {
-			loginfo("Proper usage is u <user_name> \n");
+			dmesg = sprintf(last_message, "Proper usage is u <user_name> \n");
 			break;
 		}
 		else if (ret > USER_NAME_LIMIT)  {
-			loginfo("Please limit your name to %d charaters or less\n", USER_NAME_LIMIT);
+			dmesg = sprintf(last_message, "Please limit your name to %d charaters or less\n", USER_NAME_LIMIT);
 			break;
 		}
     
     // TODO:  Check requirements, may need to logout/disconn completely 
+    /*  Depart room, if joined to a room */
+    if (state == RUN) {
+      clear_room();
+      state = CONN;
+    }
+    /*  Disconnect from current server, if already connected */
+    if (state == CONN) {
+      leave_group(mbox, server_group);
+      SP_disconnect(mbox);
+    }
+
     
 		User[0] = '0';
 		User[1] = '0';
 		User[2] = '0';
-		loginfo("user is <%s>, arg is <%s>\n", User, arg);
+		logdb("user is <%s>, arg is <%s>\n", User, arg);
 		strcpy(&User[3], arg);
 		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
-		state = LOGG;
+		dmesg = sprintf(last_message, "Your username is now set to '%s'\n", &User[3]);
+    
+    if (state == CONN) {
+      login_server(my_server + 1);  /* Log back into same server */
+    }
+    else {
+      state = LOGG;
+    }
 		break;
 		
   /* ------------- VIEW SERVERS --------------------------------------*/
 	case 'v':
 		if (state < CONN) {
-			loginfo("You must be logged in and connected to a server to view connected servers.\n");
+			dmesg = sprintf(last_message, "You must be logged in and connected to a server to view connected servers.\n");
 			break;
 		}
 		logdb("Sending view server request to server, %s\n", server_inbox);
@@ -628,7 +625,7 @@ void User_command()   {
 		break;
 	
 	default:
-		loginfo("Invalid command. Printing help menu.. \n");
+		dmesg = sprintf(last_message, "Invalid command. Printing help menu.. \n");
 		Print_menu();
 	}
   display(0);
@@ -660,6 +657,43 @@ int main (int argc, char *argv[])  {
 //	disconn_spread(mbox);
 	
 	return(0);
+}
+
+
+void login_server (int svr)  {
+  int ret, i;
+  char 	client_id[3];
+  char  server_id;
+  
+  logdb ("CONNECT to Server <%d>\n", svr);
+  my_server = svr - 1;
+  strcpy(server_group, SERVER_GROUP_PREFIX);
+  server_id = (char)(my_server + (int)'1');
+  server_group[8] = server_id;
+  User[0]         = server_id;
+
+  i = 1;
+  /* Connect to Spread */
+  do {
+    if (i == 100)  {
+      SP_error(ret);
+      logerr("User is only allowed 100 clients per server!\n");
+      disconn_spread(mbox);
+    }
+    sprintf(client_id, "%02d", i++);
+    memcpy(&User[1], client_id, 2);
+    ret = connect_spread(&mbox, User, Private_group);
+  } while (ret != ACCEPT_SESSION);
+
+  logdb("Actual username is <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
+  dmesg = sprintf(last_message, "Your username is now set to '%s'\n", &User[3]);
+
+  join_group(mbox, server_group);
+  strcpy(server_inbox, SERVER_NAME_PREFIX);
+  server_inbox[7] = server_id;
+  connected_server[my_server] = TRUE;
+  
+  state = CONN;
 }
 
 
@@ -698,5 +732,6 @@ void Print_menu()  {
 	loginfo("\t%-20s%s\n", "h", "Get chat room History (must be joined to a room)");
 	loginfo("\t%-20s%s\n", "l <chat #>", "Like a chat text (must be joined to a room)");
 	loginfo("\t%-20s%s\n", "r <chat #>", "Remove a Like (must be joined to a room & have previously likes that chat text)");
-	loginfo("\t%-20s%s\n", "q", "Quit");
+	loginfo("\t%-20s%s\n\n\n", "q", "Quit");
+
 }

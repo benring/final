@@ -47,7 +47,7 @@ void chat_ll_print_num(chat_ll* list, int num) {
     while (curr) {
 //      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
       if (index++ >= display_min) {
-        printf("%d. [%s]: %-80s", index, &(curr->data.chat.user[3]), curr->data.chat.text);
+        printf("%3d. [%-10s]: %-80s", index, &(curr->data.chat.user[3]), curr->data.chat.text);
         count = like_ll_count_likes(&curr->data.likes);
 
         if (count > 0) {
