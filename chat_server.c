@@ -183,7 +183,6 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   send_message(mbox, client_group, (char *) &out_msg, sizeof(Message));
   logdb("Sending updated list of servers to all clients\n");
 
-  /* TODO reconcile! */
   if (new_members) {
     my_state = RECONCILE;
     update_my_vector();
@@ -391,12 +390,13 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
     //}
 
   
-    /* Send a message to the distro group for this room */ 
+  /* Send a message to the distro group for this room */ 
   prepareLikeMsg(&out_msg, user, ref, action, like_lts);
   send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
 
   return SUCCESSFUL_UPDATE;
 }
+
 
 int log_update(update *u) {
   if (logfile) {
@@ -429,7 +429,8 @@ int recover_from_disk(update_ll *list) {
     apply_update(&curr_update, FALSE);
     num_in_log++;
   }
-  printf("Recovered %d Updates\n", num_in_log);
+  
+  logdb("Recovered %d Updates\n", num_in_log);
   return num_in_log;
 }
 
@@ -437,12 +438,11 @@ int incorporate_into_state(update *u) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
-
   int result;
+  
   switch (u->tag)  {
     case ROOM: 
       re = (room_entry *) &(u->entry);
-      logdb("Applying room update on %s\n", re->room);
       result = apply_room_update (re->room);
       break;
 		
@@ -507,24 +507,32 @@ int apply_update (update * u, int shouldLog) {
   
   if (shouldLog) {
     log_update(u);
-    printf("Logging update!\n");
+    logdb("LOGGING update: (%d, %d).\n", u->lts.ts, u->lts.pid);
   }
 
   /* Insert into the list of updates */
   update_ll_insert_inorder_fromback(&updates, *u);
 
+  /* Incorporate into state */
   int result;
   result = incorporate_into_state(u);
+
+  /* Upon success, try to apply pending updates */
   if (result == SUCCESSFUL_UPDATE) {
     try_pending_updates();
   }
+  /* Or, Stash update as PENDING, if necessary */
   else if (result == PENDING_UPDATE) {
     logdb("Inserting update into PENDING\n");
     update_ll_insert_inorder_fromback(pending_updates, *u);
   } 
+  else {
+    logerr("ERROR: unhandled update!");
+    exit(1);
+  }
+
+  return result;
 }
-
-
 
 void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
   Message out_msg;
