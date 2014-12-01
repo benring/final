@@ -26,7 +26,7 @@ void join_group (mailbox box, char name[MAX_GROUP_NAME])  {
 	if(res < 0) {
 		SP_error(res);
 	}
-	printf("Joined to {%s}. \n", name);
+	//printf("Joined to {%s}. \n", name);
 }
 
 void leave_group (mailbox box, char name[MAX_GROUP_NAME])  {
@@ -35,13 +35,13 @@ void leave_group (mailbox box, char name[MAX_GROUP_NAME])  {
 	if(res < 0) {
 		SP_error(res);
 	}
-	printf("Left Group: {%s}. \n", name);
+	//printf("Left Group: {%s}. \n", name);
 }
 
 
 /*  Called upon termination */
 void disconn_spread(mailbox box)  {
-	printf("\nTerminating.\n");
+	//printf("\nTerminating.\n");
 	SP_disconnect(box);
 	exit(0);
 }
@@ -54,7 +54,7 @@ int connect_spread (mailbox * box, char user[MAX_GROUP_NAME], char private_group
 	test_timeout.sec = 5;
 	test_timeout.usec = 0;
 	ret = SP_connect_timeout(SPREAD_DAEMON, user, 0, 1, box, private_group, test_timeout );
-	loginfo("Connected to daemon: '%s', user is <%s>, private group {%s}\n", SPREAD_DAEMON, user, private_group );
+	//loginfo("Connected to daemon: '%s', user is <%s>, private group {%s}\n", SPREAD_DAEMON, user, private_group );
 	return ret;
 }
 

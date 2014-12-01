@@ -76,7 +76,7 @@ int main (int argc, char *argv[])  {
   	  exit(0);
   }
 
-  logdb("[TRANSITION] Entering INIT state\n");
+  logdb("[TRANSITION] Entering INIT state. Connecting and initializing Spread. \n");
   my_state = INIT;
   Initialize(argv[1]);
 
@@ -85,7 +85,7 @@ int main (int argc, char *argv[])  {
   E_init();
 
   /* Initiate Membership join  */
-  logdb("[TRANSITION] Entering READY state\n");
+  logdb("[TRANSITION] Entering READY state. Spread is connected. Recover from disk and join Spread groups. \n");
   my_state = READY;
   
   /* Read the log file */ 
@@ -98,8 +98,7 @@ int main (int argc, char *argv[])  {
   join_group(mbox, client_group);
   join_group(mbox, server_name[me]);
 
-  logdb("Attaching reader event handler\n");
-  logdb("[TRANSITION] Entering RUN state\n");
+  logdb("[TRANSITION] Entering RUN state. Attach handlers and start processing messages.\n");
   my_state = RUN;
   E_attach_fd(mbox, READ_FD, Run, 0, NULL, HIGH_PRIORITY );
   E_handle_events();
@@ -112,6 +111,15 @@ int main (int argc, char *argv[])  {
 }
 
 #include "utils.h"
+
+void print_my_vector() {
+  int i; 
+  printf("My vector:\n");
+  for(i = 0; i < MAX_SERVERS; i++) {
+    printf("%d ", my_vector[i]);
+  }
+  printf("\n");
+}
 
 void update_my_vector() {
   int i = 0;
@@ -128,12 +136,6 @@ void update_my_vector() {
     my_vector[curr->data.lts.pid] = curr->data.lts.ts;
     curr = curr->next;
   }
-
-  printf("My vector:\n");
-  for(i = 0; i < MAX_SERVERS; i++) {
-    printf("%d ", my_vector[i]);
-  }
-  printf("\n");
 
   return;
 }
@@ -156,7 +158,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     int server_num = get_server_num(members[i]);
     new_connected_svr[server_num] = TRUE;
     strcpy(server_inbox[i],  members[i]);
-    logdb("Server #%d: Private MSG inbox is %s", i, server_inbox[i]);
+    //logdb("Server #%d: Private MSG inbox is %s", i, server_inbox[i]);
   }
 
   /* Compare to previous members */
@@ -169,13 +171,14 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
         new_members = TRUE;
       }
       char* status_change_msg = (joined) ? "JOINED" : "LEFT";
-      loginfo("  Server %d has %s the server-group \n", i+1, status_change_msg);
+      //loginfo("  Server %d has %s the server-group \n", i+1, status_change_msg);
 
       /* Update */
       connected_svr[i] = new_connected_svr[i];
     }
   }
 
+  logdb("Server membership has changed. Current members:\n")
   print_connected_servers();
 
   /*  Send updated list of connected servers to all clients  */
@@ -183,9 +186,19 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   send_message(mbox, client_group, (char *) &out_msg, sizeof(Message));
   logdb("Sending updated list of servers to all clients\n");
 
-  if (new_members) {
+  // Determine if we need to reconcile. (New members have joined. And more than 1 server)
+  int sum = 0;
+  for (i = 0; i < MAX_SERVERS; i++) {
+    if (connected_svr[i]) {
+      sum++;
+    }
+
+  }
+  if (new_members && sum > 1) {
     my_state = RECONCILE;
+    logdb("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
     update_my_vector();
+    print_my_vector();
 
     /* Expect an additional vector from each server */
     for (i=0; i < MAX_SERVERS; i++) {
@@ -215,11 +228,8 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       }
     }
 
-    logdb("Sending my lts vector\n");
     send_message(mbox, server_group, &out_msg, sizeof(Message));
   }
-
-  Reconcile();
 }
 
 /* Update the list of connected clients */
@@ -231,7 +241,7 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   client_ll_node *curr = connected_clients.first;
   while (curr) {
     if (!is_client_in_list(curr->data.name, num_members, members)) {
-      printf("Client %s has disconnected from the server! \n", curr->data.name);
+      //printf("Client %s has disconnected from the server! \n", curr->data.name);
       remove_client(curr->data.name);
     }
     curr = curr->next;
@@ -240,16 +250,16 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   /* Check for additions */
   for(i=0; i< num_members; i++) {
     if(!client_ll_get(&connected_clients, members[i])) {
-      printf("Client %s has connected to the server! \n", members[i]);
+      //printf("Client %s has connected to the server! \n", members[i]);
       add_client(members[i]);
-      
- 			prepareViewMsg(&out_msg, connected_svr);
-			send_message(mbox, members[i], &out_msg, sizeof(Message));
-
-      
+  
+      // TODO can we send one multicast to the client group?
+      prepareViewMsg(&out_msg, connected_svr);
+      send_message(mbox, members[i], &out_msg, sizeof(Message));
     }
   }
 
+  logdb("Membership change in clients. New List: \n");
   print_connected_clients();
 }
 
@@ -430,7 +440,7 @@ int recover_from_disk(update_ll *list) {
     num_in_log++;
   }
   
-  logdb("Recovered %d Updates\n", num_in_log);
+  logdb("RECOVERY: Recovered %d Updates\n", num_in_log);
   return num_in_log;
 }
 
@@ -753,6 +763,7 @@ void handle_server_update() {
       }
 
       ltsm = (LTSVectorMessage *) mess.payload;
+      
       logdb(" RECEIVED AN LTS VECTOR FROM %d\n", ltsm->sender);
       for (i=0; i < MAX_SERVERS; i++) {
         logdb("  %d", ltsm->lts[i]);
@@ -777,6 +788,8 @@ void handle_server_update() {
       }
 
       if (sum == 0) {
+        logdb("Received all vectors: Calculating updates to send: \n"); 
+        
         /* Send out missing updates */
         for (i = 0; i < MAX_SERVERS; i++) {
           if (i == me && max_lts_vector[i] != 0) {
@@ -790,8 +803,6 @@ void handle_server_update() {
           }
         }
 
-        logdb("Calculating updates to send: \n"); 
-        
         for (i = 0; i < MAX_SERVERS; i++) {
            logdb ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i], max_lts_vector[i]);
         }
@@ -832,9 +843,11 @@ void handle_server_update() {
           }
           curr_update = curr_update->next;
         }
-
+        logdb("[TRANSITION] Done with RECONCILE. Entering RUN state.\n");
+        my_state = RUN;
       }
 
+       
       break;
       
     default:
@@ -953,15 +966,21 @@ static	void	Run()   {
     exit(0);
   }
 
-  logdb("----------------------\n");
-//  name = strtok(sender, HASHTAG);
-  logdb("Received from %s\n", sender);
-
+  // TODO verify
+  /* Ignore all updates from ourself */ 
+  name = strtok(sender, HASHTAG);
+  if (strcmp(name, server_name[me]) == 0) {
+    return;
+  }
+  else { 
+    logdb("----------------------\n");
+    logdb("Received from %s\n", sender);
+  }
 
   /*  Processes Message */
   if (Is_regular_mess(service_type))	{
-//    logdb("   The user name is <%s>\n", name);
-//    if (strcmp(target_groups[0], server_group) == 0) {
+  //    logdb("   The user name is <%s>\n", name);
+  //    if (strcmp(target_groups[0], server_group) == 0) {
     if (sender[1] == 's') {
       name = strtok(sender, HASHTAG);
       // MAY WANT TO CHECK IF ITS OUR MESSAGE & DO SOMETHING DIFFERENT (OR IGNORE IT)

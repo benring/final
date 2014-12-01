@@ -44,7 +44,6 @@ void add_client(char *name) {
 
 void print_connected_servers () {
   int i;
-  logdb("Connected Servers:\n");
   for (i=0; i<5; i++)  {
     if (connected_svr[i]) {
       logdb("  -Server #%d\n", i+1);
@@ -53,9 +52,5 @@ void print_connected_servers () {
 }
 
 void print_connected_clients() {
-
-  /* Print current clients */
-  logdb("Current client list: \n");
-
   client_ll_print(&connected_clients);
 }

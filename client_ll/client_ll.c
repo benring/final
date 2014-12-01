@@ -23,16 +23,12 @@ void client_ll_print(client_ll* list) {
     printf("Empty List\n");
   }
   else {
-    printf("First: %s\n", list->first->data.name);
-    printf("Last: %s\n", list->last->data.name);
-    printf("Contents: \n");
     client_ll_node* curr = list->first;
     while (curr) {
-      printf("%s\n", curr->data.name);
+      printf("  -%s\n", curr->data.name);
       curr = curr->next;
     }
   }
-  
 }
 
 int client_ll_append(client_ll* list, client_info data) {
