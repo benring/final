@@ -219,4 +219,14 @@ ELEM* update_ll_get_inorder_fromback(update_ll* list, lts_entry lts) {
   return result;
 }
 
-
+int update_ll_clear(update_ll* list) {
+  update_ll_node* curr = list->first;
+  update_ll_node* next;
+  while(curr) {
+    next = curr->next;
+    free(curr);
+    curr = next;
+  }
+  list->first = 0;
+  list->last = 0;
+}

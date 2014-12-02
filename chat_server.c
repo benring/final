@@ -988,6 +988,7 @@ void try_pending_updates() {
 
   // Swap lists
   // TODO clear() function to free each node
+  update_ll_clear(pending_updates);
   free(pending_updates);
   pending_updates = newpending;
   logdb("After: ");
