@@ -45,14 +45,13 @@ void    handle_client_change(int num_members,
                           char members[MAX_CLIENTS][MAX_GROUP_NAME]);
 
 /*  Functions to create updates fom data */
-void    build_roomEntry (char * r);
+//void    build_roomEntry (char * r);
 void 		build_chatEntry (char * u, char * r, char * t);
 void 		build_likeEntry (char * u, lts_entry e, char a);
 int     log_update(update *u);
 
 /*  Functions to build global state from updates*/
 int     apply_update (update * u, int shouldLog, int send_clients);
-int     apply_room_update (char * name);
 int     apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients);
 int     apply_like_update(lts_entry ref, lts_entry like_lts, 
                               char* user, char action, int send_clients);
@@ -65,7 +64,8 @@ void    resend_update (update *u, int recv_svr[MAX_SERVERS]);
 void    update_my_vector();
 
 /*  Other functions for server operations */
-void send_history_to_client(char *roomname, char *client);
+void    send_history_to_client(char *roomname, char *client);
+void    create_room (char * name);
 
 
 /* Helper functions  */
@@ -242,7 +242,7 @@ void	Read_message()   {
   else if(Is_membership_mess(service_type)) {
     
     if (Is_transition_mess( service_type ))  {
-      logdb(" RECEIVED A TRANSITIONAL MESSAGE!!!!!!!!  Group: %s\n", sender);
+      logdb(" Ignoring TRANSITIONAL message on group: %s\n", sender);
       return;
     }
     name = strtok(sender, HASHTAG);
@@ -369,10 +369,13 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       /* Create and Apply an Update. Send it out to serevers. Then send history to client */
       jm = (JoinMessage *) mess.payload;
       logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", jm->user, client, jm->room);
-      build_roomEntry(jm->room);
-      apply_update(out_update, TRUE, TRUE);
-      prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
-      send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
+//      build_roomEntry(jm->room);
+      create_room(jm->room);
+//      /* Join Messages are ONLY sent out when a room is first created */
+//      if (apply_update(out_update, TRUE, TRUE) == SUCCESSFUL_UPDATE) {
+//        prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
+//        send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
+//      }
       send_history_to_client(jm->room, client);
       break;
 
@@ -533,17 +536,17 @@ void handle_server_update() {
   logdb("Received '%c' Update from server\n", mess.tag);
 
   switch (mess.tag) {
-    case JOIN_MSG:
-      /* Build and appy the update */
-      jm = (JoinMessage *) mess.payload;
-
-      new_update.tag = ROOM;
-      new_update.lts.pid = jm->lts.pid;
-      new_update.lts.ts = jm->lts.ts;
-      strcpy(new_update.entry, jm->room);
-      
-      logdb("  New Room <%s> from server group\n", jm->room);
-      break;
+//    case JOIN_MSG:
+//      /* Build and appy the update */
+//      jm = (JoinMessage *) mess.payload;
+//
+//      new_update.tag = ROOM;
+//      new_update.lts.pid = jm->lts.pid;
+//      new_update.lts.ts = jm->lts.ts;
+//      strcpy(new_update.entry, jm->room);
+//      
+//      logdb("  New Room <%s> from server group\n", jm->room);
+//      break;
       
     case APPEND_MSG:
       /* Build and apply the update */
@@ -731,11 +734,11 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 /*------------------------------------------------------------------------------
  *  The "Build" Functions are designed to create a log entry update from data.
  *----------------------------------------------------------------------------*/
-void build_roomEntry (char * r) {
-	out_update->tag = ROOM;
-	out_update->lts.ts = ++lts;
-	strcpy(out_update->entry, r);
-}
+//void build_roomEntry (char * r) {
+//	out_update->tag = ROOM;
+//	out_update->lts.ts = ++lts;
+//	strcpy(out_update->entry, r);
+//}
 
 void build_chatEntry (char * u, char * r, char * t) {
 	chat_entry *ce;
@@ -827,11 +830,11 @@ int apply_update (update * u, int shouldLog, int send_clients) {
   return result;
 }
 
-int apply_room_update (char * name)  {
+void create_room (char * name)  {
   char        distrolist[MAX_GROUP_NAME];
   room_info   new_room;
   
-  /*  If this is a new room, create it & add to room list */
+  /*  Check to ensure room does not exist */
   if (room_ll_get(&rooms, name) == 0) {
     /* Build room_info */
     strcpy(new_room.name, name);
@@ -855,22 +858,22 @@ int apply_room_update (char * name)  {
     logdb("Room '%s' already exists\n", name);
   }
 
-  return SUCCESSFUL_UPDATE;
 }
 
 int apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients) {
-  // TODO: always send out the updates? even during recovery?
-  // seems redundant. but maybe necessary if we crashed
   Message   out_msg;
   chat_info new_chat;
   chat_ll   *chat_list;
   room_info *rm; 
 
+  /* First try to create the room (if it's new) */
+  create_room(ce->room);
+
   /* Grab the room associated with this chat */
   rm = room_ll_get(&rooms, ce->room);
   if (!rm) {
-    logdb("WARNING! Room does not exist for thsi chat\n");
-    return PENDING_UPDATE;
+    logerr("Error! Room never created\n");
+    disconn_spread(mbox);
   }
     
   /* Grab the list of chats for the room */
@@ -950,16 +953,16 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
 }
 
 int incorporate_into_state(update *u, int send_clients) {
-  room_entry  *re;
+//  room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
   int result;
   
   switch (u->tag)  {
-    case ROOM: 
-      re = (room_entry *) &(u->entry);
-      result = apply_room_update (re->room);
-      break;
+//    case ROOM: 
+//      re = (room_entry *) &(u->entry);
+//      result = apply_room_update (re->room);
+//      break;
 		
     case CHAT:
       ce = (chat_entry *) &(u->entry);
@@ -1054,16 +1057,16 @@ void update_my_vector() {
 
 void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
   Message out_msg;
-  room_entry  *re;
+//  room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
 
   switch (u->tag)  {
-    case ROOM: 
-      re = (room_entry *) &(u->entry);
-      logdb("Resending room update on %s\n", re->room);
-      prepareJoinMsg (&out_msg, re->room, "RECONCILE", u->lts);
-      break;
+//    case ROOM: 
+//      re = (room_entry *) &(u->entry);
+//      logdb("Resending room update on %s\n", re->room);
+//      prepareJoinMsg (&out_msg, re->room, "RECONCILE", u->lts);
+//      break;
 		
     case CHAT:
       ce = (chat_entry *) &(u->entry);

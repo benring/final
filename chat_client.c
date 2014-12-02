@@ -362,6 +362,11 @@ void Read_message() {
 
   /* Process Group membership messages */
   else if(Is_membership_mess(service_type)) {
+    
+    if (Is_transition_mess( service_type ))  {
+      logdb(" Ignoring TRANSITIONAL message on group: %s\n", sender);
+      return;
+    }
 
     /* Re-interpret the fields passed to SP receive */
     changed_group = sender;
