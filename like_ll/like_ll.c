@@ -287,11 +287,15 @@ int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char
   like_entry new_like;
 
   /* Check the user's current like status */
+  logdb("Searching for user %s likes\n");
   old_like = like_ll_get_user(like_list, user);
-  if (old_like && lts_greaterthan(like_lts, old_like->lts)) {
-    logdb("Updating like status from %c to %c for user %s\n", old_like->action, action, user);
-    old_like->lts = like_lts;
-    old_like->action = action;
+  if (old_like) {
+    printf("FOUND OLD LIKE for %s: (%d, %d)\n", user, old_like->lts.ts, old_like->lts.pid);
+    if (lts_greaterthan(like_lts, old_like->lts)) {
+      logdb("Updating like status from %c to %c for user %s\n", old_like->action, action, user);
+      old_like->lts = like_lts;
+      old_like->action = action;
+    }
   }
   else {
   

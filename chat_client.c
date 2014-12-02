@@ -11,6 +11,7 @@
 #define CONN 2
 #define RUN 3
 #define USER_NAME_LIMIT 10
+#define DEFAULT_LINE_DISPLAY 25
 
 
 //typedef struct client_state {
@@ -52,6 +53,7 @@ static  name_ll   displayed_attendees;
 static  int       connected_server[MAX_SERVERS];
 static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
 static  int       dmesg = -1;
+static  int       chat_lines_to_display = DEFAULT_LINE_DISPLAY;
 
 
 void Initialize();
@@ -67,12 +69,13 @@ void display(int code) {
   }
   else {
 //    system("clear");
-    loginfo("------------------------------------------\n");
+    loginfo("\n------------------------------------------\n");
     if (state == RUN) {
         loginfo("ROOM:  %s\n", my_room);
         loginfo("Attendees");
         name_ll_print(&displayed_attendees);
-        chat_ll_print_num(&chat_room, 25);
+        chat_ll_print_num(&chat_room, chat_lines_to_display);
+        chat_lines_to_display = DEFAULT_LINE_DISPLAY;
         loginfo("------------------------------------------\n");
     }
     if (dmesg >= 0) {
@@ -265,8 +268,7 @@ void process_client_change(int num_members,
       if (user[0] != 's') {
         client_server = (int)(user[0] - '1');
 //        logdb("(c-) Checking %s from server %d\n", user, client_server);
-        if (connected_server[client_server] && 
-            !name_ll_search(&displayed_attendees, &user[3])) {
+        if (connected_server[client_server]) {
           name_ll_insert(&displayed_attendees, &user[3]);
           dmesg = sprintf(last_message, "Client '%s' has JOINED room <%s> \n", &user[3], my_room);
         }
@@ -291,19 +293,23 @@ void Read_message() {
   char*  	members;
   char    *name;
   int     server_alive;
+  char    empty_user[MAX_GROUP_NAME];
 
   service_type = 0;
 
-//  fflush(stdout);
-//  logdb("---------   ");
-//	display();
+
 
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
   	           &mess_type, &endian_mismatch, sizeof(Message), (char *) &in_msg );
   if (ret < 0 )  {
+    if (ret == CONNECTION_CLOSED) {
+      loginfo("Client is crashing due to spread daemon termination....TERMINATING NOW!\n");
+      exit(0);
+    }
     SP_error(ret);
     exit(0);
   }
+  
 
   name = strtok(sender, HASHTAG);
   
@@ -324,13 +330,11 @@ void Read_message() {
     changed_group = sender;
     num_members   = num_target_groups;
     members       = target_groups;
-    logdb("Membership change for %s\n", sender);
 
     if (strcmp(changed_group, server_group) == 0) {
       /* Always verify our server is still connected */
       server_alive = FALSE;
       for (i=0; i<num_members; i++) {
-        logdb("Check is %s is alive\n", target_groups[i]);
         if (target_groups[i][1] == 's') {
           server_alive = TRUE;
           break;
@@ -338,15 +342,21 @@ void Read_message() {
       }
       if (!server_alive) {
         /* Our server is disconnected */
-        dmesg = sprintf(last_message, "Server # %d is disconnected. Please connect to a different server\n.", my_server+1);
+        dmesg = sprintf(last_message, "Server # %d is disconnected. Please connect to a different server", my_server+1);
+
+
+       /*  Depart room, if joined to a room */
         if (state == RUN) {
-          leave_group(mbox, my_room);
-          leave_group(mbox, my_room_distrolist);
+          clear_room();
         }
+        E_detach_fd(mbox, READ_FD);
         leave_group(mbox, server_group);
+        
+        SP_disconnect(mbox);
         state = LOGG;
+
       }
-      // OTHERWISE: Ignore other servers joining/leaving
+      /* OTHERWISE: Ignore other servers joining/leaving  */
 
     }
     else {
@@ -382,6 +392,7 @@ void User_command()   {
 		disconn_spread(mbox);
 	
 	last_command = command[0];
+  
 
 	switch(last_command)  {
 
@@ -398,6 +409,7 @@ void User_command()   {
 		}
 		if (strlen(arg) > 80) {
 			dmesg = sprintf(last_message, " Text chat too long (80 Char max). Truncating your chat");
+      
 		}
 		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
 		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
@@ -409,17 +421,21 @@ void User_command()   {
 	case 'c':
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1 || strlen(arg) > 1)  {
-			dmesg = sprintf(last_message, "Proper usage is c <server #> \n");
+			dmesg = sprintf(last_message, "Proper usage is c <server #>");
 			break;
 		}
 		else if (arg[0] < '1' || arg[0] > '5') {
-			dmesg = sprintf(last_message, "Please enter a valid server # between 1-5 \n");
+			dmesg = sprintf(last_message, "Please enter a valid server # between 1-5");
 			break;
 		}
 		else if (state < LOGG) {
-			dmesg = sprintf(last_message, "You must select a username before connecting to a server\n");
+			dmesg = sprintf(last_message, "You must select a username before connecting to a server");
 			break;
 		}
+    else if (state >= CONN && arg[0] == (char)(my_server + (int)'1')) {
+			dmesg = sprintf(last_message, "You are already logged onto Server #%s", arg);
+			break;
+    }
     
    /*  Depart room, if joined to a room */
     if (state == RUN) {
@@ -428,8 +444,10 @@ void User_command()   {
     }
     /*  Disconnect from current server, if already connected */
     if (state == CONN) {
+      E_detach_fd(mbox, READ_FD);
       leave_group(mbox, server_group);
       SP_disconnect(mbox);
+      logdb("DISCONNECTING FROM SPREAD!!!\n");
       state = LOGG;
     }
 
@@ -440,24 +458,25 @@ void User_command()   {
   /* ------------- HISTORY --------------------------------------*/
 	case 'h':
 		if (state < RUN) {
-			dmesg = sprintf(last_message, "You must be logged in and joined to a room to request a chat history.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to request a chat history");
 			break;
 		}
 		logdb ("Sending history request for <%s>\n", my_room);
-		prepareHistoryMsg(out_msg, my_room, User);
-		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+//		prepareHistoryMsg(out_msg, my_room, User);
+//		send_message(mbox, server_inbox, out_msg, sizeof(Message));
+    chat_lines_to_display = -1;
 		
 		break;
 
   /* ------------- LIKE --------------------------------------*/
 	case 'l':
 		if (state < RUN) {
-			dmesg = sprintf(last_message, "You must be logged in and joined to a room to like a chat.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to like a chat.");
 			break;
 		}
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1)  {
-			dmesg = sprintf(last_message, "Proper usage is l <chat #> \n");
+			dmesg = sprintf(last_message, "Proper usage is l <chat #>");
 			break;
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
@@ -467,15 +486,21 @@ void User_command()   {
 		logdb ("Trying to Like Chat # <%d>, LTS: (%d,%d)\n", like_num,ref.ts, ref.pid);
     
     if (lts_eq(ref, null_lts)) {
-      dmesg = sprintf(last_message, "You cannot like a chat that does not exist.\n");
+      dmesg = sprintf(last_message, "You cannot like a chat that does not exist.");
       break;
     }
 
     ch = chat_ll_get(&chat_room, ref);
+    
+    logdb("User %s is trying to like a message from user %s\n",&User[3],  &(ch->chat.user[3]));
+    if (strcmp(&(ch->chat.user[3]), &User[3]) == 0) {
+      dmesg = sprintf(last_message, "You cannot like your own chat.");
+      break;
+    }
     logdb("Current Like list for this chat:\n");
     like_ll_print(&(ch->likes));
     if (does_like(&(ch->likes), &User[3])) {
-      dmesg = sprintf(last_message, "You cannot like a chat you already like.\n");
+      dmesg = sprintf(last_message, "You cannot like a chat you already like.");
       break;
     }
     
@@ -486,12 +511,12 @@ void User_command()   {
   /* ------------- REMOVE LIKE --------------------------------------*/
 	case 'r':
 		if (state < RUN) {
-			dmesg = sprintf(last_message, "You must be logged in and joined to a room to remove a like.\n");
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to remove a like.");
 			break;
 		}
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1)  {
-			dmesg = sprintf(last_message, "Proper usage is r <chat #> \n");
+			dmesg = sprintf(last_message, "Proper usage is r <chat #> ");
 			break;
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
@@ -503,13 +528,13 @@ void User_command()   {
 
     
     if (lts_eq(ref, null_lts)) {
-      dmesg = sprintf(last_message, "You cannot Un-like a chat that does not exist.\n");
+      dmesg = sprintf(last_message, "You cannot Un-like a chat that does not exist.");
       break;
     }
 
     ch = chat_ll_get(&chat_room, ref);
     if (!does_like(&(ch->likes), &User[3])) {
-      dmesg = sprintf(last_message, "You cannot Un-like a chat you do not like.\n");
+      dmesg = sprintf(last_message, "You cannot Un-like a chat you do not like.");
       break;
     }
 
@@ -523,15 +548,15 @@ void User_command()   {
 	case 'j':
 		ret = sscanf(&command[2], "%s", arg);
 		if (state < CONN) {
-			dmesg = sprintf(last_message, "You must be logged in and connected to a server to join a room\n");
+			dmesg = sprintf(last_message, "You must be logged in and connected to a server to join a room.");
 			break;
 		}
     else if( ret < 1 )  {
-			dmesg = sprintf(last_message, "Proper usage is j <room_name> \n");
+			dmesg = sprintf(last_message, "Proper usage is j <room_name> ");
 			break;
 		}
 		else if (ret > MAX_GROUP_NAME) {
-			dmesg = sprintf(last_message, "Please use a name less than %d characters long\n", MAX_GROUP_NAME-12);
+			dmesg = sprintf(last_message, "Please use a name less than %d characters long.", MAX_GROUP_NAME-12);
       break;
 		}
 
@@ -570,11 +595,11 @@ void User_command()   {
 		logdb("SETTING USERNAME\n");
 		ret = sscanf(&command[2], "%s", arg);
 		if (ret < 1) {
-			dmesg = sprintf(last_message, "Proper usage is u <user_name> \n");
+			dmesg = sprintf(last_message, "Proper usage is u <user_name>");
 			break;
 		}
 		else if (ret > USER_NAME_LIMIT)  {
-			dmesg = sprintf(last_message, "Please limit your name to %d charaters or less\n", USER_NAME_LIMIT);
+			dmesg = sprintf(last_message, "Please limit your name to %d charaters or less.", USER_NAME_LIMIT);
 			break;
 		}
     
@@ -586,6 +611,7 @@ void User_command()   {
     }
     /*  Disconnect from current server, if already connected */
     if (state == CONN) {
+      E_detach_fd(mbox, READ_FD);
       leave_group(mbox, server_group);
       SP_disconnect(mbox);
     }
@@ -597,7 +623,7 @@ void User_command()   {
 		logdb("user is <%s>, arg is <%s>\n", User, arg);
 		strcpy(&User[3], arg);
 		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
-		dmesg = sprintf(last_message, "Your username is now set to '%s'\n", &User[3]);
+		dmesg = sprintf(last_message, "Your username is now set to '%s'", &User[3]);
     
     if (state == CONN) {
       login_server(my_server + 1);  /* Log back into same server */
@@ -610,7 +636,7 @@ void User_command()   {
   /* ------------- VIEW SERVERS --------------------------------------*/
 	case 'v':
 		if (state < CONN) {
-			dmesg = sprintf(last_message, "You must be logged in and connected to a server to view connected servers.\n");
+			dmesg = sprintf(last_message, "You must be logged in and connected to a server to view connected servers.");
 			break;
 		}
 		logdb("Sending view server request to server, %s\n", server_inbox);
@@ -625,7 +651,7 @@ void User_command()   {
 		break;
 	
 	default:
-		dmesg = sprintf(last_message, "Invalid command. Printing help menu.. \n");
+		dmesg = sprintf(last_message, "Invalid command. Printing help menu.");
 		Print_menu();
 	}
   display(0);
@@ -654,7 +680,6 @@ int main (int argc, char *argv[])  {
 	E_handle_events();
 
   logdb("EXITTED Spread Event Handling\n");
-//	disconn_spread(mbox);
 	
 	return(0);
 }
@@ -667,7 +692,6 @@ void login_server (int svr)  {
   
   logdb ("CONNECT to Server <%d>\n", svr);
   my_server = svr - 1;
-  strcpy(server_group, SERVER_GROUP_PREFIX);
   server_id = (char)(my_server + (int)'1');
   server_group[8] = server_id;
   User[0]         = server_id;
@@ -682,16 +706,25 @@ void login_server (int svr)  {
     }
     sprintf(client_id, "%02d", i++);
     memcpy(&User[1], client_id, 2);
+    E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, LOW_PRIORITY );
     ret = connect_spread(&mbox, User, Private_group);
+    logdb("CONNECTED TO SPREAD\n");
   } while (ret != ACCEPT_SESSION);
+  
+  
+
 
   logdb("Actual username is <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
   dmesg = sprintf(last_message, "Your username is now set to '%s'\n", &User[3]);
-
+  
+  
   join_group(mbox, server_group);
-  strcpy(server_inbox, SERVER_NAME_PREFIX);
   server_inbox[7] = server_id;
   connected_server[my_server] = TRUE;
+
+  logdb("My Server group is %s\n", server_group);
+  logdb("My Server inbox is %s\n", server_inbox);
+
   
   state = CONN;
 }
@@ -719,7 +752,8 @@ void Initialize() {
   my_server = -1;
   display_delay.sec = 1;
   display_delay.usec = 0;
-
+  strcpy(server_group, SERVER_GROUP_PREFIX);
+  strcpy(server_inbox, SERVER_NAME_PREFIX);
 }
 
 void Print_menu()  {

@@ -43,6 +43,9 @@ void chat_ll_print_num(chat_ll* list, int num) {
     printf("Empty List\n");
   }
   else {
+    if (num == -1) {
+      display_min = 0;
+    }
     chat_ll_node* curr = list->first;
     while (curr) {
 //      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);

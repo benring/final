@@ -21,6 +21,7 @@
 /* Forward Declared functions */
 static	void		Run();
 static	void		Reconcile();
+static  void Except();
 void 			Initialize (char * server_index);
 float 			time_diff (struct timeval s, struct timeval e);
 void 		build_roomEntry (char * r);
@@ -37,6 +38,7 @@ static	Message			update_message;
 /* Protocol vars  */
 static 	unsigned int		me;
 static  char    		my_server_id;
+static  char        my_spread_name[MAX_GROUP_NAME];
 static  char				server_name[MAX_SERVERS][MAX_GROUP_NAME];
 static  char				server_inbox[MAX_SERVERS][MAX_GROUP_NAME];
 static	char				server_group[MAX_GROUP_NAME];
@@ -101,6 +103,7 @@ int main (int argc, char *argv[])  {
   logdb("[TRANSITION] Entering RUN state. Attach handlers and start processing messages.\n");
   my_state = RUN;
   E_attach_fd(mbox, READ_FD, Run, 0, NULL, HIGH_PRIORITY );
+  E_attach_fd(mbox, EXCEPT_FD, Except, 0, NULL, HIGH_PRIORITY );
   E_handle_events();
   fclose(logfile);
 
@@ -171,7 +174,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
         new_members = TRUE;
       }
       char* status_change_msg = (joined) ? "JOINED" : "LEFT";
-      //loginfo("  Server %d has %s the server-group \n", i+1, status_change_msg);
+      logdb("  Server %d has %s the server-group \n", i+1, status_change_msg);
 
       /* Update */
       connected_svr[i] = new_connected_svr[i];
@@ -205,7 +208,14 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       if (connected_svr[i]) {
         expected_vectors[i]++;
       }
+      max_lts_vector[i] = 0;
+      min_lts_vector[i] = 777777777;
     }
+    logdb("New Expected Vector is: \n");
+    for (i=0; i < MAX_SERVERS; i++) {
+      logdb (" %d", expected_vectors[i]);
+    }
+    
 
     /* Send out my vector */
     out_msg.tag = LTS_VECTOR;
@@ -217,6 +227,12 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
     /* Handle my own vector since it wont be received */
     expected_vectors[me]--;
+    logdb("Decremented myself: \n");
+    for (i=0; i < MAX_SERVERS; i++) {
+      logdb (" %d", expected_vectors[i]);
+    }
+
+    
     
     for (i=0; i < MAX_SERVERS; i++) { 
       if (my_vector[i] < min_lts_vector[i]) {
@@ -267,6 +283,7 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
  *  current global state  */
 
 int apply_room_update (char * name)  {
+  Message   out_msg;
   char        distrolist[MAX_GROUP_NAME];
   room_info   new_room;
   
@@ -291,13 +308,13 @@ int apply_room_update (char * name)  {
     join_group(mbox, name);
   }
   else {
-    logdb("Room '%s' already exists", name);
+    logdb("Room '%s' already exists\n", name);
   }
 
   return SUCCESSFUL_UPDATE;
 }
 
-int apply_chat_update (chat_entry * ce, lts_entry * ts) {
+int apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients) {
   // TODO: always send out the updates? even during recovery?
   // seems redundant. but maybe necessary if we crashed
   Message   out_msg;
@@ -334,12 +351,15 @@ int apply_chat_update (chat_entry * ce, lts_entry * ts) {
   
   /* Append to chat list for this room */
   chat_ll_insert_inorder_fromback(chat_list, new_chat); /* Send a message to the distro group for this room */ 
-  prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
-  send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+  
+  if (send_clients)  {
+    prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
+    send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+  }
   return SUCCESSFUL_UPDATE;
 }
 
-int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action) {
+int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action, int send_clients) {
   Message   out_msg;
   update      *mu;
   chat_entry  *ce;
@@ -376,34 +396,14 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
 
   /* Grab the chat_info and update its like list */
   ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
-  logdb("Current Like list for associated chat at LTS (%d, %d)\n", ref.ts, ref.pid);
-
   like_list = &(ch->likes);
-  like_ll_print(like_list);
-
   like_ll_update_like(like_list, user, like_lts, action);
-
-  like_ll_print(like_list);
-
-    // TODO I think both of these things can happen after a partition
-    // So maybe checks can be client side only
-    //if (does_like(like_list, user) && action == ADD_LIKE) {
-    //  loginfo("User cannot like a chat s/he already likes!\n");
-    //  // TODO: Return LIKE-REJECT MSG to client
-    //  return 0;
-    //}
-
-    //if (!does_like(like_list, user) && action == REM_LIKE) {
-    //  loginfo("User cannot remove a like a non-liked chat\n");
-    //  // TODO: Return LIKE-REJECT MSG to client
-    //  return 0;
-    //}
-
   
   /* Send a message to the distro group for this room */ 
-  prepareLikeMsg(&out_msg, user, ref, action, like_lts);
-  send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
-
+  if (send_clients)  {
+    prepareLikeMsg(&out_msg, user, ref, action, like_lts);
+    send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+  }
   return SUCCESSFUL_UPDATE;
 }
 
@@ -436,7 +436,7 @@ int recover_from_disk(update_ll *list) {
   }
 
   while (fread(&curr_update, sizeof(update), 1, logfile) == 1) {
-    apply_update(&curr_update, FALSE);
+    apply_update(&curr_update, FALSE, FALSE);
     num_in_log++;
   }
   
@@ -444,7 +444,7 @@ int recover_from_disk(update_ll *list) {
   return num_in_log;
 }
 
-int incorporate_into_state(update *u) {
+int incorporate_into_state(update *u, int send_clients) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
@@ -458,12 +458,12 @@ int incorporate_into_state(update *u) {
 		
     case CHAT:
       ce = (chat_entry *) &(u->entry);
-      result = apply_chat_update (ce, &(u->lts));
+      result = apply_chat_update (ce, &(u->lts), send_clients);
       break;
 			
     case LIKE:
       le = (like_entry *) &(u->entry);
-      result = apply_like_update(le->lts, u->lts, le->user, le->action);
+      result = apply_like_update(le->lts, u->lts, le->user, le->action, send_clients);
       break;
 		
     default:
@@ -483,7 +483,7 @@ void try_pending_updates() {
   update_ll_print(pending_updates);
  
   while(curr_node) {
-    result = incorporate_into_state(&(curr_node->data)); 
+    result = incorporate_into_state(&(curr_node->data), TRUE); 
     if (result == SUCCESSFUL_UPDATE) {
       logdb("Succesfully applied pending update: (%d, %d)\n", curr_node->data.lts.ts, curr_node->data.lts.pid)
     }
@@ -502,7 +502,7 @@ void try_pending_updates() {
   update_ll_print(pending_updates);
 }
 
-int apply_update (update * u, int shouldLog) {
+int apply_update (update * u, int shouldLog, int send_clients) {
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
@@ -525,7 +525,7 @@ int apply_update (update * u, int shouldLog) {
 
   /* Incorporate into state */
   int result;
-  result = incorporate_into_state(u);
+  result = incorporate_into_state(u, send_clients);
 
   /* Upon success, try to apply pending updates */
   if (result == SUCCESSFUL_UPDATE) {
@@ -653,7 +653,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       jm = (JoinMessage *) mess.payload;
       logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", jm->user, client, jm->room);
       build_roomEntry(jm->room);
-      apply_update(out_update, TRUE);
+      apply_update(out_update, TRUE, TRUE);
       prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       send_history_to_client(jm->room, client);
@@ -664,7 +664,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       am = (AppendMessage *) mess.payload;
       logdb("APPEND Request from user: <%s> on client: <%s>, for room <%s>. Msg is '%s'\n", am->user, client, am->room, am->text);
       build_chatEntry(am->user, am->room, am->text);
-      apply_update(out_update, TRUE);
+      apply_update(out_update, TRUE, TRUE);
       prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       break;
@@ -679,7 +679,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       
       // TODO: MAY NEED TO RTN SUCCESS on APPLY_UPDATE; FOR LIKEs
         // ONLY SEND IF APPLY_UPDATE RETURNS SUCCESS
-      apply_update(out_update, TRUE);
+      apply_update(out_update, TRUE, TRUE);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
       send_message(mbox, server_group, (char *)&out_msg, sizeof(Message));
       break;
@@ -765,6 +765,7 @@ void handle_server_update() {
       ltsm = (LTSVectorMessage *) mess.payload;
       
       logdb(" RECEIVED AN LTS VECTOR FROM %d\n", ltsm->sender);
+      
       for (i=0; i < MAX_SERVERS; i++) {
         logdb("  %d", ltsm->lts[i]);
         /* Update global svr_lts tracker -- for sending updates */
@@ -774,11 +775,15 @@ void handle_server_update() {
       }
       logdb("\n");
       expected_vectors[ltsm->sender]--;
-      
+     logdb("New Expected Vector is: \n");
+      for (i=0; i < MAX_SERVERS; i++) {
+        logdb (" %d", expected_vectors[i]);
+      }
+
+      sum = 0;
       for(i=0; i < MAX_SERVERS; i++) {
         sum += expected_vectors[i];
         my_responsibility[i] = 0;
-
         if (ltsm->lts[i] < min_lts_vector[i]) {
           min_lts_vector[i] = ltsm->lts[i]; 
         }
@@ -857,7 +862,7 @@ void handle_server_update() {
 
   // Hack for now. dont apply an LTS Vector, for example.
   if (shouldApply) {
-    apply_update(&new_update, TRUE);
+    apply_update(&new_update, TRUE, TRUE);
   }
 }
 
@@ -892,7 +897,7 @@ void Initialize (char * server_index) {
     server_name[i][7] = (char)(1 + i + (int)'0');
     connected_svr[i] = FALSE;
     expected_vectors[i] = 0;
-    min_lts_vector[i] = UINT_MAX;
+    min_lts_vector[i] = 777777777;
     max_lts_vector[i] = 0;
   }
   
@@ -962,18 +967,23 @@ static	void	Run()   {
   ret = SP_receive(mbox, &service_type, sender, 100, &num_target_groups, target_groups,
   	           &mess_type, &endian_mismatch, sizeof(mess), (char *) &mess );
   if (ret < 0 )  {
+    if (ret == CONNECTION_CLOSED) {
+      loginfo("Server is crashing due to spread daemon termination....TERMINATING NOW!\n");
+      exit(0);
+    }
     SP_error(ret);
     exit(0);
   }
 
   // TODO verify
   /* Ignore all updates from ourself */ 
-  name = strtok(sender, HASHTAG);
-  if (strcmp(name, server_name[me]) == 0) {
+//  name = strtok(sender, HASHTAG);
+    logdb("--------------------------------------------------------\n");
+  if (strcmp(sender, Private_group) == 0) {
+    logdb("Received from me:  %s\n", Private_group);
     return;
   }
   else { 
-    logdb("----------------------\n");
     logdb("Received from %s\n", sender);
   }
 
@@ -996,6 +1006,11 @@ static	void	Run()   {
   }
   /* Process Group membership messages */
   else if(Is_membership_mess(service_type)) {
+    
+    if (Is_transition_mess( service_type ))  {
+      logdb(" RECEIVED A TRANSITIONAL MESSAGE!!!!!!!!  Group: %s\n", sender);
+      return;
+    }
     name = strtok(sender, HASHTAG);
     /* Re-interpret the fields passed to SP receive */
     //changed_group = sender;
@@ -1021,7 +1036,10 @@ static	void	Run()   {
 }
 
 
-
+static  void Except()  {
+  logdb("EXECPTION received from Spread. Quitting.\n");
+  disconn_spread(mbox);
+}
 
 /*  OTHER HELPER function (for timing) */
 float time_diff (struct timeval s, struct timeval e)  {
