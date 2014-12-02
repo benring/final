@@ -285,10 +285,13 @@ int chat_ll_length(chat_ll *list) {
 }
 
 void chat_ll_remove_first(chat_ll *list) {
+  chat_ll_node *first;
   if (chat_ll_is_empty(list)) {
     return;
   }
+  first = list->first;
   list->first = list->first->next;
   list->first->prev = 0;
+  free(first);
   return;
 }
