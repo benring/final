@@ -32,6 +32,6 @@ int client_ll_append(client_ll* list, client_info data);
 /* Search the whole (unordered) list for an lts */ 
 client_info* client_ll_get(client_ll *list, char * name); 
 
-client_info* client_ll_remove(client_ll *list, char * name);
+int client_ll_remove(client_ll *list, char * name);
 
 #endif

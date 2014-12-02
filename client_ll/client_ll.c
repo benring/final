@@ -75,11 +75,10 @@ client_info* client_ll_get(client_ll* list, char * name) {
   return result;
 }
 
-client_info* client_ll_remove(client_ll* list, char * name) {
-  client_info* result = 0;
+int client_ll_remove(client_ll* list, char * name) {
   client_ll_node* curr = list->first;
   if (client_ll_is_empty(list)) {
-    return result;
+    return -1;
   }
 
   client_ll_node* prev = 0;
@@ -100,11 +99,11 @@ client_info* client_ll_remove(client_ll* list, char * name) {
                           curr->next->prev = prev;
                         }
                         
-			result = &curr->data;
-			return result;
+                        free(curr);
+			return 0;
 		}
 		prev = curr;
 		curr = curr->next;
 	}
-  return result;
+  return -1;
 }

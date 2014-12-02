@@ -264,10 +264,10 @@ void process_client_change(int num_members,
   /* Remove attendees from global list based on recent membership msg */
   while (curr) {
     if (!is_client_in_list(curr->data.name, num_members, members)) {
+      strcpy(client_name, curr->data.name);
       client_ll_remove(&attendees, curr->data.name);    
 
       /*  Process unique usernames only */
-      strcpy(client_name, curr->data.name);
       user = strtok(client_name, HASHTAG);
       
       /*  For display, only process clients 
