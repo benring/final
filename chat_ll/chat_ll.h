@@ -31,6 +31,9 @@ int chat_ll_is_empty(chat_ll* list);
 /* Print the contents of a list */
 void chat_ll_print(chat_ll* list);
 
+/* Print last num elements of a list */
+void chat_ll_print_num(chat_ll* list, int num);
+
 /* Append to the end of the list */
 int chat_ll_append(chat_ll* list, chat_info data);
 

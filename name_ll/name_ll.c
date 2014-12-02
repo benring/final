@@ -69,7 +69,11 @@ int name_ll_append(name_ll* list, char name[MAX_GROUP_NAME])
   return 1; /* success */
 }
 
-
+/*  
+ *  Return -1 if found & incremented
+ *  Return 1 if not found & sucessfully appended
+ *  Will return 0 if append fails
+ */
 int name_ll_insert(name_ll* list, char *name)
 {
   name_ll_node* curr = list->first;
@@ -79,19 +83,23 @@ int name_ll_insert(name_ll* list, char *name)
   while(curr) {
     if (strcmp(curr->data.name, name) == 0) {
       curr->data.count++;
-      return 1;
+      return 0;
     }
     curr = curr->next;
   }
   return name_ll_append(list, name);
 }
 
-
+/*  
+ *  Return -1 if not found
+ *  Return 0 if found & removed
+ *  Return 1 if found, count reduced, but name remains in set
+ */
 int name_ll_remove(name_ll* list, char *name)
 {
   name_ll_node* curr = list->first;
   if (name_ll_is_empty(list)) {
-    return 0;
+    return -1;
   }
 
   name_ll_node* prev = 0;
@@ -119,12 +127,12 @@ int name_ll_remove(name_ll* list, char *name)
       }
 
       list->size--;
-      return 1;
+      return 0;
     }
     prev = curr;
     curr = curr->next;
   }
-  return 0;
+  return -1;
 }
 
 

@@ -1,4 +1,12 @@
-#ifndef CONFIG_H
+/******************************************************************************
+ * File:     config.c
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  Common static values used in the chat service
+ *
+ *****************************************************************************/
+ #ifndef CONFIG_H
 #define CONFIG_H
 
 #include "sp.h"
@@ -26,7 +34,6 @@
 #define REM_LIKE 'R'
 
 
-
 #define	DEBUG 1
 #ifdef  DEBUG
 #define logdb(args...) printf(args);
@@ -47,7 +54,5 @@
 #else
 #define logerr(args...)
 #endif
-
-
 
 #endif

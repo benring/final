@@ -6,7 +6,6 @@
 #include "like_ll.h"
 #include "room_ll.h"
 #include <limits.h>
-#define ALL_SERVER_GROUP "server-all"
 
 #define INIT 0
 #define READY 1
@@ -17,6 +16,7 @@
 #define UNHANDLED_UPDATE 2
 #define PENDING_UPDATE 3
 #define SUCCESSFUL_UPDATE 4
+#define ALL_SERVER_GROUP "server-all"
 
 /* Forward Declared functions */
 static	void		Run();
@@ -915,9 +915,6 @@ void Initialize (char * server_index) {
   sprintf(logfilename, "log_%c.txt", my_server_id);
 }
 
-static	void	Reconcile() {return;}
-
-
 void build_roomEntry (char * r) {
 	out_update->tag = ROOM;
 	out_update->lts.ts = ++lts;
@@ -1041,12 +1038,3 @@ static  void Except()  {
   disconn_spread(mbox);
 }
 
-/*  OTHER HELPER function (for timing) */
-float time_diff (struct timeval s, struct timeval e)  {
-  float usec;
-  usec = (e.tv_usec > s.tv_usec) ?
-         (float)(e.tv_usec-s.tv_usec) :
-         (float)(s.tv_usec-e.tv_usec)*-1;
-
-  return ((float)(e.tv_sec-s.tv_sec) + usec/1000000);
-}
