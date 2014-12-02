@@ -13,7 +13,7 @@
 
 #include "transaction.h"
 
-#define MAX_MESSAGE_SIZE 256
+#define MAX_MESSAGE_SIZE 1024
 
 /*  Message Tag Codes  */
 #define LTS_VECTOR 'T'
