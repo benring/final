@@ -127,6 +127,7 @@ int name_ll_remove(name_ll* list, char *name)
       }
 
       list->size--;
+      free(curr);
       return 0;
     }
     prev = curr;
