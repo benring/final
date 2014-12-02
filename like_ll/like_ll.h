@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "lts_utils.h"
+#include "transaction.h"
 
 typedef struct like_ll_node {
   like_entry data;

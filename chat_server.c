@@ -62,6 +62,7 @@ void    try_pending_updates();
 /*  Functions to manage reconciling & recovery for fault tolerance */
 int     recover_from_disk(update_ll *list);
 void    resend_update (update *u, int recv_svr[MAX_SERVERS]);
+void    update_my_vector();
 
 /*  Other functions for server operations */
 void send_history_to_client(char *roomname, char *client);
@@ -148,7 +149,8 @@ int main (int argc, char *argv[])  {
   my_state = READY;
   
   /* Read the log file */ 
-  if (logfile = fopen(logfilename, "a+b")) {
+  logfile = fopen(logfilename, "a+b");
+  if (logfile) {
     fseek(logfile, 0, SEEK_SET);
     recover_from_disk(&updates);
   }
@@ -478,7 +480,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
     /* Send out my vector */
     out_msg.tag = LTS_VECTOR;
-    ltsm = &(out_msg.payload);
+    ltsm = (LTSVectorMessage *) &(out_msg.payload);
     ltsm->sender = me; 
     for (i = 0; i < MAX_SERVERS; i++) {
       ltsm->lts[i] = my_vector[i]; 
@@ -503,12 +505,12 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       }
     }
 
-    send_message(mbox, all_server_group, &out_msg, sizeof(Message));
+    send_message(mbox, all_server_group, (char *) &out_msg, sizeof(Message));
   }
 }
 
 void handle_server_update() {
-  update         new_update, *mu;
+  update         new_update;
   JoinMessage    *jm;
   AppendMessage  *am;
   //HistoryMessage *hm;
@@ -686,7 +688,6 @@ void handle_server_update() {
 void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   int i;
   Message out_msg;
-  client_info new_client;
   /* Check for removals */
   client_ll_node *curr = connected_clients.first;
   while (curr) {
@@ -705,7 +706,7 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   
       // TODO can we send one multicast to the client group?
       prepareViewMsg(&out_msg, connected_svr);
-      send_message(mbox, members[i], &out_msg, sizeof(Message));
+      send_message(mbox, members[i], (char *) &out_msg, sizeof(Message));
     }
   }
 
@@ -814,7 +815,6 @@ int apply_update (update * u, int shouldLog, int send_clients) {
 }
 
 int apply_room_update (char * name)  {
-  Message   out_msg;
   char        distrolist[MAX_GROUP_NAME];
   room_info   new_room;
   
@@ -898,8 +898,6 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   chat_ll     *chat_list;
   chat_info   *ch;
   like_ll     *like_list;
-  like_entry  new_like;
-  like_entry  *old_like;
   
   /* Grab the original chat update referenced by the like */
   logdb("Getting room for LTS Ref (%d, %d)\n", ref.ts, ref.pid);
@@ -1045,7 +1043,6 @@ void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
   room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
-  int         i;
 
   switch (u->tag)  {
     case ROOM: 
