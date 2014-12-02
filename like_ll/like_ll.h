@@ -2,7 +2,6 @@
 #define LIKE_LL_H
 
 #include "config.h"
-#include "state.h"
 #include "lts_utils.h"
 
 typedef struct like_ll_node {

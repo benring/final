@@ -3,7 +3,6 @@
 
 #include "transaction.h"
 #include "chat_ll.h"
-#include "state.h"
 #include "lts_utils.h"
 
 
