@@ -120,8 +120,8 @@ static  char                 logfilename[NAME_LEN];
 static  unsigned int         my_vector[MAX_SERVERS];
 static  unsigned int         expected_vectors[MAX_SERVERS];
 static  unsigned int         my_responsibility[MAX_SERVERS];
-static  unsigned int         min_lts_vector[MAX_SERVERS];
-static  unsigned int         max_lts_vector[MAX_SERVERS];
+static  lts_entry            min_lts_vector[MAX_SERVERS];
+static  lts_entry            max_lts_vector[MAX_SERVERS];
 static  unsigned int         all_svr_lts_vectors[MAX_SERVERS][MAX_SERVERS];
 
 
@@ -305,8 +305,10 @@ void Initialize (char * server_index) {
   for (i=0; i<MAX_SERVERS; i++) {
     connected_svr[i] = FALSE;
     expected_vectors[i] = 0;
-    min_lts_vector[i] = 777777777;
-    max_lts_vector[i] = 0;
+    min_lts_vector[i].pid = 10;
+    max_lts_vector[i].pid = 10;
+    min_lts_vector[i].ts = 777777777;
+    max_lts_vector[i].ts = 0;
   }
   
   /* Do other program initialization */
@@ -469,15 +471,16 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       if (connected_svr[i]) {
         expected_vectors[i]++;
       }
-      max_lts_vector[i] = 0;
-      min_lts_vector[i] = 777777777;
+      max_lts_vector[i].pid = 10;
+      min_lts_vector[i].pid = 10;
+      max_lts_vector[i].ts = 0;
+      min_lts_vector[i].ts = 777777777;
     }
     logdb("New Expected Vector is: \n");
     for (i=0; i < MAX_SERVERS; i++) {
       logdb (" %d", expected_vectors[i]);
     }
     
-
     /* Send out my vector */
     out_msg.tag = LTS_VECTOR;
     ltsm = (LTSVectorMessage *) &(out_msg.payload);
@@ -492,19 +495,22 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     for (i=0; i < MAX_SERVERS; i++) {
       logdb (" %d", expected_vectors[i]);
     }
-
-    
     
     for (i=0; i < MAX_SERVERS; i++) { 
-      if (my_vector[i] < min_lts_vector[i]) {
-        min_lts_vector[i] = my_vector[i];
+      lts_entry my_entry;
+      my_entry.ts = my_vector[1];
+      my_entry.pid = me;
+      if (lts_lessthan(my_entry, min_lts_vector[i])) {
+        min_lts_vector[i].ts = my_vector[i];
+        min_lts_vector[i].pid = me;
       }
 
-      if (max_lts_vector[i] == 0 || my_vector[i] > max_lts_vector[i]) {
-        max_lts_vector[i] = my_vector[i];
+      if (max_lts_vector[i].ts == 0 || lts_greaterthan(my_entry, max_lts_vector[i])) {
+        max_lts_vector[i].ts = my_vector[i];
+        max_lts_vector[i].pid = me;
       }
     }
-
+      
     send_message(mbox, all_server_group, (char *) &out_msg, sizeof(Message));
   }
 }
@@ -598,41 +604,48 @@ void handle_server_update() {
         logdb (" %d", expected_vectors[i]);
       }
 
+      lts_entry new_entry;
       sum = 0;
       for(i=0; i < MAX_SERVERS; i++) {
         sum += expected_vectors[i];
         my_responsibility[i] = 0;
-        if (ltsm->lts[i] < min_lts_vector[i]) {
-          min_lts_vector[i] = ltsm->lts[i]; 
+        new_entry.ts = ltsm->lts[i];
+        new_entry.pid = ltsm->sender;
+        if (lts_lessthan(new_entry, min_lts_vector[i])) {
+          min_lts_vector[i] = new_entry;
         }
-        if (max_lts_vector[i] == 0 || ltsm->lts[i] > max_lts_vector[i]) {
-          max_lts_vector[i] = ltsm->lts[i];
+        if (max_lts_vector[i].ts == 0 || lts_greaterthan(new_entry, max_lts_vector[i])) {
+          max_lts_vector[i] = new_entry;
         }
       }
 
       if (sum == 0) {
         logdb("Received all vectors: Calculating updates to send: \n"); 
-        
+       
+        lts_entry my_entry;
+        my_entry.pid = me;
         /* Send out missing updates */
         for (i = 0; i < MAX_SERVERS; i++) {
-          if (i == me && max_lts_vector[i] != 0) {
+          my_entry.ts = my_vector[i];
+          if (i == me && max_lts_vector[i].ts != 0) {
             my_responsibility[i] = TRUE;
           }
           // TODO this may cause multiple senders.
           // we can fix this by storing the pid along with the max LTS
           // and only that pid should send
-          if (max_lts_vector[i] != 0 && my_vector[i] >= max_lts_vector[i] && !connected_svr[i]) {
+
+          if (max_lts_vector[i].ts != 0 && !lts_lessthan(my_entry, max_lts_vector[i]) && !connected_svr[i]) {
             my_responsibility[i] = TRUE;
           }
         }
 
         for (i = 0; i < MAX_SERVERS; i++) {
-           logdb ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i], max_lts_vector[i]);
+           logdb ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
         }
 
         for (i = 0; i < MAX_SERVERS; i++) {
           if(my_responsibility[i]) {
-            logdb("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i], max_lts_vector[i]);
+            logdb("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
           }
         }
 
@@ -644,7 +657,7 @@ void handle_server_update() {
           currpid = curr_update->data.lts.pid;
           currts = curr_update->data.lts.ts;
           if (my_responsibility[currpid]) {
-            if(currts <= max_lts_vector[currpid] && currts >= min_lts_vector[currpid]) {
+            if(currts <= max_lts_vector[currpid].ts && currts >= min_lts_vector[currpid].ts) {
               logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
               
               /* Only send to servers who need the update */
