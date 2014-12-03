@@ -444,7 +444,6 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     my_state = RECONCILE;
     loginfo("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
     update_my_vector();
-    print_my_vector();
 
     /* Expect an additional vector from each server */
     for (i=0; i < MAX_SERVERS; i++) {
@@ -922,9 +921,6 @@ void try_pending_updates() {
   update_ll_node *curr_node = pending_updates->first;
   int result;
   
-  logdb("Trying to apply pending updates. Before:\n");
-  update_ll_print(pending_updates);
- 
   while(curr_node) {
     result = incorporate_into_state(&(curr_node->data), TRUE); 
     if (result == SUCCESSFUL_UPDATE) {
@@ -941,8 +937,6 @@ void try_pending_updates() {
   update_ll_clear(pending_updates);
   free(pending_updates);
   pending_updates = newpending;
-  logdb("After: ");
-  update_ll_print(pending_updates);
 }
 
 
