@@ -38,7 +38,7 @@ static	char		  my_room[MAX_GROUP_NAME];
 static  char      my_room_distrolist[MAX_GROUP_NAME];
 static	char		  server_inbox[MAX_GROUP_NAME];
 static  chat_ll   chat_room;
-static  client_ll attendees;
+//static  client_ll attendees;
 static  name_ll   displayed_attendees;
 static  int       connected_server[MAX_SERVERS];
 static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
@@ -215,32 +215,6 @@ void process_server_message() {
         }
       }
       strcat(last_message, "  ]\n");
-      
-      /* Update displayed attendee list for my_room based on connected svrs */
-      curr = attendees.first;
-      while (curr) {
-        if (curr->data.name[1] == 's') {
-          curr = curr->next;
-          continue;
-        }
-        
-        i = (int)(curr->data.name[1] - '1');
-        strcpy(client_name, curr->data.name);
-        user = strtok(client_name, HASHTAG);
-        
-        /* Add a new unique user name for display */
-        if (connected_server[i] && 
-                !name_ll_search(&displayed_attendees, &user[3])) {
-          name_ll_append(&displayed_attendees, &user[3]);
-        }
-        
-        /* Remove user from display, if was previously dislayed */
-        if (!connected_server[i] && 
-                name_ll_search(&displayed_attendees, &user[3])) {
-          name_ll_remove(&displayed_attendees, &user[3]);
-        }
-        curr = curr->next;
-      }
       break;
       
     default:
@@ -255,66 +229,39 @@ void process_server_message() {
 void process_client_change(int num_members, 
                            char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   client_info   *new_client;
-  client_ll_node *curr = attendees.first;
-  int i;
+  name_ll_node *curr = displayed_attendees.first;
+  int i, found_user;
   char *user;
   int client_server;
   char client_name[MAX_GROUP_NAME];
   
   /* Remove attendees from global list based on recent membership msg */
   while (curr) {
-    if (!is_client_in_list(curr->data.name, num_members, members)) {
-      strcpy(client_name, curr->data.name);
-      client_ll_remove(&attendees, curr->data.name);    
-
-      /*  Process unique usernames only */
+    found_user = FALSE;
+    for (i=0; i<num_members; i++) {
+      strcpy(client_name, members[i]);
       user = strtok(client_name, HASHTAG);
-      
-      /*  For display, only process clients 
-       *        whose server is connected to our server */
-      if (user[0] != 's') {
-        client_server = (int)(user[0] - '1');
-
-        if (connected_server[client_server] && 
-            name_ll_search(&displayed_attendees, &user[3])) {
-          if (name_ll_remove(&displayed_attendees, &user[3]) == 0) {
-            dmesg = sprintf(last_message, "User '%s' has LEFT room <%s>", 
-                                &user[3], my_room);        
-          }
-        }
+      if (strcmp(curr->data, &user[3]) == 0) {
+        found_user = TRUE;
+        break;
       }
+    }
+    if (!found_user) {
+      name_ll_remove(&displayed_attendees, curr->data);
+      dmesg = sprintf(last_message, "User '%s' has LEFT room <%s>", curr->data, my_room);        
     }
     curr = curr->next;
   }
 
   /* Check for additions to global attendee list (for current room) */
   for(i=0; i< num_members; i++) {
-    if(!client_ll_get(&attendees, members[i])) {
-      new_client = malloc(sizeof(client_info));
-      strcpy(new_client->name, members[i]);
-      strcpy(new_client->user, members[i]);
-      strcpy(new_client->room, my_room);      
-      client_ll_append(&attendees, *new_client);
-
-      /*  Process unique usernames only */
-      strcpy(client_name, new_client->name);
-      user = strtok(client_name, HASHTAG);
-
-      /*  For display, only add unique clients 
-       *        whose server is connected to our server */
-      if (user[0] != 's') {
-        client_server = (int)(user[0] - '1');
-        if (connected_server[client_server]) {
-          if (name_ll_insert(&displayed_attendees, &user[3]) == 1) {
-            dmesg = sprintf(last_message, "User '%s' has JOINED room <%s>", 
-                              &user[3], my_room);
-          }
-        }
-      }
+    strcpy(client_name, members[i]);
+    user = strtok(client_name, HASHTAG);
+    if (!name_ll_search(&displayed_attendees, &user[3])) {
+      name_ll_insert(&displayed_attendees, &user[3]);
+      dmesg = sprintf(last_message, "User '%s' has JOINED room <%s>", &user[3], my_room);
     }
-  }  
-  
-  
+  }
 }
 
 /*------------------------------------------------------------------------------
@@ -757,7 +704,7 @@ void clear_room ()  {
     // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
     //  function or we need to free the mem)
     chat_room = chat_ll_create();
-    attendees = client_ll_create();
+//    attendees = client_ll_create();
     displayed_attendees = name_ll_create();
   state = CONN;
 }

@@ -369,13 +369,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       /* Create and Apply an Update. Send it out to serevers. Then send history to client */
       jm = (JoinMessage *) mess.payload;
       logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", jm->user, client, jm->room);
-//      build_roomEntry(jm->room);
       create_room(jm->room);
-//      /* Join Messages are ONLY sent out when a room is first created */
-//      if (apply_update(out_update, TRUE, TRUE) == SUCCESSFUL_UPDATE) {
-//        prepareJoinMsg(&out_msg, jm->room, jm->user, out_update->lts);
-//        send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
-//      }
       send_history_to_client(jm->room, client);
       break;
 
@@ -396,9 +390,6 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
       
       build_likeEntry(lm->user, lm->ref, lm->action);
-      
-      // TODO: MAY NEED TO RTN SUCCESS on APPLY_UPDATE; FOR LIKEs
-        // ONLY SEND IF APPLY_UPDATE RETURNS SUCCESS
       apply_update(out_update, TRUE, TRUE);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
       send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
@@ -520,9 +511,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
 void handle_server_update() {
   update         new_update;
-  JoinMessage    *jm;
   AppendMessage  *am;
-  //HistoryMessage *hm;
   LTSVectorMessage *ltsm;
   LikeMessage 	 *lm;
   chat_entry     *ce;
@@ -536,18 +525,6 @@ void handle_server_update() {
   logdb("Received '%c' Update from server\n", mess.tag);
 
   switch (mess.tag) {
-//    case JOIN_MSG:
-//      /* Build and appy the update */
-//      jm = (JoinMessage *) mess.payload;
-//
-//      new_update.tag = ROOM;
-//      new_update.lts.pid = jm->lts.pid;
-//      new_update.lts.ts = jm->lts.ts;
-//      strcpy(new_update.entry, jm->room);
-//      
-//      logdb("  New Room <%s> from server group\n", jm->room);
-//      break;
-      
     case APPEND_MSG:
       /* Build and apply the update */
       am = (AppendMessage *) mess.payload;
@@ -566,7 +543,6 @@ void handle_server_update() {
       break;  
       
     case LIKE_MSG:
-
       lm = (LikeMessage *) mess.payload;
       
       /*  Create a new data log entry */
@@ -580,8 +556,8 @@ void handle_server_update() {
       le->lts = lm->ref;
 
       logdb("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
-
       break;
+
     case LTS_VECTOR:
       shouldApply = FALSE;
 
@@ -734,12 +710,6 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 /*------------------------------------------------------------------------------
  *  The "Build" Functions are designed to create a log entry update from data.
  *----------------------------------------------------------------------------*/
-//void build_roomEntry (char * r) {
-//	out_update->tag = ROOM;
-//	out_update->lts.ts = ++lts;
-//	strcpy(out_update->entry, r);
-//}
-
 void build_chatEntry (char * u, char * r, char * t) {
 	chat_entry *ce;
 	out_update->tag = CHAT;
@@ -848,11 +818,12 @@ void create_room (char * name)  {
     room_ll_append(&rooms, new_room);
     logdb("NEW ROOM created, <%s>\n", new_room.name);
           
-    /*  Server JOINs 2 groups for a room: *    1. Spread Distro group for to send updates to clients in the room *    2. Spread Membership group for attendees  */
-    	
+    /*  Server JOINs 2 groups for a room: 
+     *   1. Spread Distro group to send updates to clients in the room 
+     *   2. Spread Membership group for attendees  */    	
     logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
-    join_group(mbox, distrolist);
-    join_group(mbox, name);
+//    join_group(mbox, distrolist);
+//    join_group(mbox, name);
   }
   else {
     logdb("Room '%s' already exists\n", name);

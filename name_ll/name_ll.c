@@ -30,7 +30,7 @@ void name_ll_print(name_ll* list)
     name_ll_node* curr = list->first;
     printf(" List [%d]: ", list->size);
     while (curr) {
-      printf(" %s", curr->data.name);
+      printf(" %s", curr->data);
       curr = curr->next;
       if (curr) {
         printf(",");
@@ -50,8 +50,7 @@ int name_ll_append(name_ll* list, char name[MAX_GROUP_NAME])
     return 0; /* failure */
   }
   
-  strcpy(node->data.name, name);
-  node->data.count = 1;
+  strcpy(node->data, name);
   node->prev = 0;
   node->next = 0;
 
@@ -69,11 +68,6 @@ int name_ll_append(name_ll* list, char name[MAX_GROUP_NAME])
   return 1; /* success */
 }
 
-/*  
- *  Return -1 if found & incremented
- *  Return 1 if not found & sucessfully appended
- *  Will return 0 if append fails
- */
 int name_ll_insert(name_ll* list, char *name)
 {
   name_ll_node* curr = list->first;
@@ -81,36 +75,25 @@ int name_ll_insert(name_ll* list, char *name)
     return name_ll_append(list, name);
   }
   while(curr) {
-    if (strcmp(curr->data.name, name) == 0) {
-      curr->data.count++;
-      return 0;
+    if (strcmp(curr->data, name) == 0) {
+      return 1;
     }
     curr = curr->next;
   }
   return name_ll_append(list, name);
 }
 
-/*  
- *  Return -1 if not found
- *  Return 0 if found & removed
- *  Return 1 if found, count reduced, but name remains in set
- */
 int name_ll_remove(name_ll* list, char *name)
 {
   name_ll_node* curr = list->first;
   if (name_ll_is_empty(list)) {
-    return -1;
+    return 0;
   }
 
   name_ll_node* prev = 0;
   while(curr) {
-    if (strcmp(curr->data.name, name) == 0) {
-      
-      if (curr->data.count > 1) {
-        curr->data.count--;
-        return 1;
-      }
-      
+    if (strcmp(curr->data, name) == 0) {
+
       /* removing head of list */
       if (!prev) {
         list->first = curr->next;
@@ -128,12 +111,12 @@ int name_ll_remove(name_ll* list, char *name)
 
       list->size--;
       free(curr);
-      return 0;
+      return 1;
     }
     prev = curr;
     curr = curr->next;
   }
-  return -1;
+  return 0;
 }
 
 
@@ -145,7 +128,7 @@ int name_ll_search(name_ll* list, char *name)
     return 0;
   }
   while(curr) {
-    if (strcmp(curr->data.name, name) == 0) {
+    if (strcmp(curr->data, name) == 0) {
       return 1;
     }
     curr = curr->next;

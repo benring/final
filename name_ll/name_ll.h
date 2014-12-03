@@ -4,13 +4,8 @@
 #include "transaction.h"
 #include "lts_utils.h"
 
-typedef struct name_counter {
-	char name[MAX_GROUP_NAME];
-	int  count;
-} name_counter;
-
 typedef struct name_ll_node {
-  name_counter data;
+	char    data[MAX_GROUP_NAME];
   struct name_ll_node* prev;
   struct name_ll_node* next;
 } name_ll_node;
