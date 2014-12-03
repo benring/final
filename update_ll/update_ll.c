@@ -229,4 +229,5 @@ int update_ll_clear(update_ll* list) {
   }
   list->first = 0;
   list->last = 0;
+  return 1;
 }

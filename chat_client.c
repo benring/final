@@ -143,9 +143,6 @@ void process_server_message() {
   like_entry      *le;
   chat_info       *ch;
   int             i;
-  client_ll_node  *curr;
-  char            client_name[MAX_GROUP_NAME];
-  char            *user;
   char            tmpmsg[80] = "";
 
 	
@@ -228,11 +225,9 @@ void process_server_message() {
  *----------------------------------------------------------------------------*/
 void process_client_change(int num_members, 
                            char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
-  client_info   *new_client;
   name_ll_node *curr = displayed_attendees.first;
   int i, found_user;
   char *user;
-  int client_server;
   char client_name[MAX_GROUP_NAME];
   
   /* Remove attendees from global list based on recent membership msg */
@@ -276,9 +271,6 @@ void Read_message() {
   int			endian_mismatch;
   int			ret, i;
 
-  char*  	changed_group;
-  int    	num_members;
-  char*  	members;
   char    *name;
   int     server_alive;
 
@@ -316,14 +308,14 @@ void Read_message() {
     }
 
     /* Re-interpret the fields passed to SP receive */
-    changed_group = sender;
-    num_members   = num_target_groups;
-    members       = target_groups;
+    //changed_group = sender;
+    //num_members   = num_target_groups;
+    //members       = target_groups;
 
-    if (strcmp(changed_group, server_group) == 0) {
+    if (strcmp(sender, server_group) == 0) {
       /* Always verify our server is still connected */
       server_alive = FALSE;
-      for (i=0; i<num_members; i++) {
+      for (i=0; i<num_target_groups; i++) {
         if (target_groups[i][1] == 's') {
           server_alive = TRUE;
           break;
@@ -352,7 +344,7 @@ void Read_message() {
     }
     else {
       /* Some other client has joined/left our room  */
-      process_client_change(num_members, members);
+      process_client_change(num_target_groups, target_groups);
     }
   }
 
