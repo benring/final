@@ -86,8 +86,6 @@ void send_message(mailbox box, char * group, Message * msg)   {
       printf("ERROR Bad message received!");
       exit(0);
   }
-  
-  
 	logdb("Sending to <%s>: '%s'\n", group, (char *) msg);
 	ret= SP_multicast(box, AGREED_MESS, group, 2, len, (char *) msg);
 	if (ret < 0 )  {
