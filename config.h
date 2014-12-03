@@ -35,7 +35,7 @@
 #define REM_LIKE 'R'
 
 
-#define	DEBUG 1
+//#define	DEBUG 1
 #ifdef  DEBUG
 #define logdb(args...) printf(args);
 #else

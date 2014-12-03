@@ -29,7 +29,6 @@
 #define LTSVECTOR_MSIZE (sizeof(LTSVectorMessage) + sizeof(char))
 
 
-
 /*  Basic Message Struct:  TAG & PAYLOAD  */
 typedef struct Message {
 	char 	tag;

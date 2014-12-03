@@ -74,7 +74,6 @@ int main (int argc, char *argv[])  {
 	} 
 	
 	Initialize();
-
 	
   while (state < CONN) {
     Display(0);
@@ -125,9 +124,9 @@ void Display(int code) {
       loginfo("  Please join a chat room\n");
     }
     else {
-        loginfo("  Connected to SERVER #%d\n", my_server+1);
+      loginfo("  Connected to SERVER #%d\n", my_server+1);
     }
-      loginfo("---------------------------------------------------------------------\n");
+    loginfo("---------------------------------------------------------------------\n");
   }
   loginfo("\n%s> ", &User[3]);
   dmesg = -1;
@@ -146,7 +145,6 @@ void process_server_message() {
   chat_info       *ch;
   int             i;
   char            tmpmsg[80] = "";
-
 	
 	logdb("Received '%c' Update from server\n", in_msg.tag);
 
@@ -213,7 +211,7 @@ void process_server_message() {
           strcat(last_message, tmpmsg);
         }
       }
-      strcat(last_message, "  ]\n");
+      strcat(last_message, "  ]");
       break;
       
     default:
@@ -244,8 +242,8 @@ void process_client_change(int num_members,
       }
     }
     if (!found_user) {
-      name_ll_remove(&displayed_attendees, curr->data);
       dmesg = sprintf(last_message, "User '%s' has LEFT room <%s>", curr->data, my_room);        
+      name_ll_remove(&displayed_attendees, curr->data);
     }
     curr = curr->next;
   }
@@ -596,9 +594,8 @@ void Read_message() {
 		User[0] = '0';
 		User[1] = '0';
 		User[2] = '0';
-		logdb("user is <%s>, arg is <%s>\n", User, arg);
 		strcpy(&User[3], arg);
-		loginfo("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
+		logdb("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
 		dmesg = sprintf(last_message, "Your username is now set to '%s'", &User[3]);
     
     if (state == CONN) {
@@ -623,7 +620,7 @@ void Read_message() {
         strcat(last_message, tmpmsg);
       }
     }
-    strcat(last_message, "  ]\n");
+    strcat(last_message, "  ]");
 
 		break;
 
