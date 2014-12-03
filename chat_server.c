@@ -46,7 +46,6 @@ void    handle_client_change(int num_members,
                           char members[MAX_CLIENTS][MAX_GROUP_NAME]);
 
 /*  Functions to create updates fom data */
-//void    build_roomEntry (char * r);
 void 		build_chatEntry (char * u, char * r, char * t);
 void 		build_likeEntry (char * u, lts_entry e, char a);
 int     log_update(update *u);
@@ -97,7 +96,6 @@ static	char			  User[80];
 static  char    		Private_group[MAX_GROUP_NAME];
 static  mailbox 		mbox;
 static  Message			mess;
-static	Message			update_message;
 
 /* Spread & server name vars   */
 static 	unsigned int		me;               /* Indexed from 0 */
@@ -113,7 +111,7 @@ static	char				    all_server_group[MAX_GROUP_NAME];
 static	char				    my_client_group[MAX_GROUP_NAME];    
 
 /* Other in/output vars */
-static	update				      *out_update;
+static	update				       *out_update;
 static  FILE                 *logfile;
 static  char                 logfilename[NAME_LEN];
 
@@ -243,10 +241,6 @@ void	Read_message()   {
       return;
     }
     name = strtok(sender, HASHTAG);
-    /* Re-interpret the fields passed to SP receive */
-    //changed_group = sender;
-    //num_members   = num_target_groups;
-    //members       = target_groups;
 
     if (strcmp(sender, all_server_group) == 0) {
       handle_server_change(num_target_groups, target_groups);
@@ -305,7 +299,7 @@ void Initialize (char * server_index) {
     min_lts_vector[i].pid = 10;
     max_lts_vector[i].pid = 10;
     // TODO use MAXINT
-    min_lts_vector[i].ts = 777777777;
+    min_lts_vector[i].ts = MAX_INT;
     max_lts_vector[i].ts = 0;
   }
   
@@ -316,8 +310,7 @@ void Initialize (char * server_index) {
   connected_clients = client_ll_create();
   lts = 0;
 
-  update_message.tag = UPDATE;
-  out_update = (update *) &(update_message.payload);
+  out_update = malloc (sizeof(update));
   out_update->lts.pid = me;
 
   sprintf(logfilename, "log_%c.txt", my_server_id);
@@ -351,7 +344,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
     case VIEW_MSG :
       /* Send the connected_servers to the client */
       prepareViewMsg(&out_msg, connected_svr);
-      send_message(mbox, client, (char *)&out_msg, sizeof(Message));
+      send_message(mbox, client, &out_msg);
       logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
       break;
 		
@@ -370,7 +363,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       build_chatEntry(am->user, am->room, am->text);
       apply_update(out_update, TRUE, TRUE);
       prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
-      send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
+      send_message(mbox, all_server_group, &out_msg);
       break;
 
     case LIKE_MSG: 
@@ -382,7 +375,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       build_likeEntry(lm->user, lm->ref, lm->action);
       apply_update(out_update, TRUE, TRUE);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
-      send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
+      send_message(mbox, all_server_group, &out_msg);
       break;
 
     default:
@@ -433,7 +426,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
 
   /*  Send updated list of connected servers to all clients  */
   prepareViewMsg(&out_msg, connected_svr);
-  send_message(mbox, my_client_group, (char *) &out_msg, sizeof(Message));
+  send_message(mbox, my_client_group, &out_msg);
   logdb("Sending updated list of servers to all clients\n");
 
   // Determine if we need to reconcile. (New members have joined. And more than 1 server)
@@ -458,7 +451,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       max_lts_vector[i].pid = 10;
       min_lts_vector[i].pid = 10;
       max_lts_vector[i].ts = 0;
-      min_lts_vector[i].ts = 777777777;
+      min_lts_vector[i].ts = MAX_INT;
     }
     logdb("New Expected Vector is: \n");
     for (i=0; i < MAX_SERVERS; i++) {
@@ -495,7 +488,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       }
     }
       
-    send_message(mbox, all_server_group, (char *) &out_msg, sizeof(Message));
+    send_message(mbox, all_server_group, &out_msg);
   }
 }
 
@@ -679,7 +672,7 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   
       // TODO can we send one multicast to the client group?
       prepareViewMsg(&out_msg, connected_svr);
-      send_message(mbox, members[i], (char *) &out_msg, sizeof(Message));
+      send_message(mbox, members[i], &out_msg);
     }
   }
 
@@ -729,9 +722,7 @@ int log_update(update *u) {
     logerr("ERROR: log file is not open. can't log update\n");
     exit(1);
   }
-
 }
-
 
 
 /*------------------------------------------------------------------------------
@@ -847,7 +838,7 @@ int apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients) {
   
   if (send_clients)  {
     prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, new_chat.lts);
-    send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+    send_message(mbox, rm->distro_group,&out_msg);
   }
   return SUCCESSFUL_UPDATE;
 }
@@ -893,7 +884,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   /* Send a message to the distro group for this room */ 
   if (send_clients)  {
     prepareLikeMsg(&out_msg, user, ref, action, like_lts);
-    send_message(mbox, rm->distro_group,(char *) &out_msg, sizeof(Message));
+    send_message(mbox, rm->distro_group,&out_msg);
   }
   return SUCCESSFUL_UPDATE;
 }
@@ -998,7 +989,6 @@ void update_my_vector() {
 
 void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
   Message out_msg;
-//  room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
 
@@ -1024,7 +1014,7 @@ void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
       return;
     }
     /* Send update to all servers  */
-    send_message(mbox, all_server_group, (char *)&out_msg, sizeof(Message));
+    send_message(mbox, all_server_group, &out_msg);
 
 }
 
@@ -1049,14 +1039,14 @@ void send_history_to_client(char *roomname, char *client) {
   while(curr_chat_node) {
     chat = &(curr_chat_node->data);
     prepareAppendMsg(&out_msg, chat->chat.room, chat->chat.user, chat->chat.text, chat->lts);
-    send_message(mbox, client, (char *) &out_msg, sizeof(Message));
+    send_message(mbox, client, &out_msg);
 
     likes = &(chat->likes);
     curr_like_node = likes->first;
     while(curr_like_node) {
       like = &(curr_like_node->data);
       prepareLikeMsg(&out_msg, like->user, chat->lts, like->action, like->lts);
-      send_message(mbox, client, (char *) &out_msg, sizeof(Message));
+      send_message(mbox, client, &out_msg);
       curr_like_node = curr_like_node->next;
     }
 

@@ -12,6 +12,15 @@
 
 #include "transaction.h"
 
+
+/*  Message Tag Codes  */
+#define LTS_VECTOR 'T'
+#define APPEND_MSG 'A'
+#define JOIN_MSG 'J'
+#define VIEW_MSG 'V'
+#define LIKE_MSG 'L'
+
+/*  Message Sizes  */
 #define MAX_MESSAGE_SIZE 1024
 #define JOIN_MSIZE (sizeof(JoinMessage) + sizeof(char))
 #define APPEND_MSIZE (sizeof(AppendMessage) + sizeof(char))
@@ -19,14 +28,7 @@
 #define VIEW_MSIZE (sizeof(ViewMessage) + sizeof(char))
 #define LTSVECTOR_MSIZE (sizeof(LTSVectorMessage) + sizeof(char))
 
-/*  Message Tag Codes  */
-#define LTS_VECTOR 'T'
-#define UPDATE 'U'
-#define APPEND_MSG 'A'
-#define JOIN_MSG 'J'
-#define VIEW_MSG 'V'
-#define HISTORY_MSG 'H'
-#define LIKE_MSG 'L'
+
 
 /*  Basic Message Struct:  TAG & PAYLOAD  */
 typedef struct Message {

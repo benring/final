@@ -18,21 +18,21 @@
 #define LOGG 1
 #define CONN 2
 #define RUN 3
-#define USER_NAME_LIMIT 10
+#define USER_NAME_LIMIT 20
 #define DEFAULT_LINE_DISPLAY 25
 
 /*  Client Global State  */
 static	int			  state;
-static	char		  server_group[MAX_GROUP_NAME];
-static	char		  my_room[MAX_GROUP_NAME];
-static  char      my_room_distrolist[MAX_GROUP_NAME];
-static	char		  server_inbox[MAX_GROUP_NAME];
 static  chat_ll   chat_room;
-//static  client_ll attendees;
 static  name_ll   displayed_attendees;
 static  int       connected_server[MAX_SERVERS];
-static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
+static  int       my_server;    /* Indexed from 0 */
 
+/*  Spread groups */
+static	char		  my_server_group[MAX_GROUP_NAME]; /* For tracking server membership */
+static	char		  my_server_inbox[MAX_GROUP_NAME]; /* For Sending messages */
+static	char		  my_room[MAX_GROUP_NAME];         /* For tracking room attendee membership */
+static  char      my_room_distrolist[MAX_GROUP_NAME]; /* For Receiving messages */
 
 /* Message handling vars */
 static	char		    User[USER_NAME_LIMIT];
@@ -41,8 +41,8 @@ static  mailbox 	  mbox;
 static  Message		  *out_msg;
 static  Message     in_msg;
 static	lts_entry		null_lts;
-static  sp_time     display_delay;
-static  sp_time     idle;
+//static  sp_time     display_delay;
+//static  sp_time     idle;
 
 
 /* User Interface vars */
@@ -94,9 +94,9 @@ int main (int argc, char *argv[])  {
  *   Display - Displays chat session & output to user
  *----------------------------------------------------------------------------*/
 void Display(int code) {
-  sp_time   now;
-  now = E_get_time();
-  E_sub_time(now, display_delay);
+//  sp_time   now;
+//  now = E_get_time();
+//  E_sub_time(now, display_delay);
   
   if (code == 1) {
     logdb("Waiting to display\n");
@@ -309,12 +309,7 @@ void Read_message() {
       return;
     }
 
-    /* Re-interpret the fields passed to SP receive */
-    //changed_group = sender;
-    //num_members   = num_target_groups;
-    //members       = target_groups;
-
-    if (strcmp(sender, server_group) == 0) {
+    if (strcmp(sender, my_server_group) == 0) {
       /* Always verify our server is still connected */
       server_alive = FALSE;
       for (i=0; i<num_target_groups; i++) {
@@ -336,7 +331,7 @@ void Read_message() {
 
         /* Detach & disconnect from Spread since we have no server */
         E_detach_fd(mbox, READ_FD);
-        leave_group(mbox, server_group);
+        leave_group(mbox, my_server_group);
         SP_disconnect(mbox);
         state = LOGG;
 
@@ -357,7 +352,7 @@ void Read_message() {
 
   Display(0);
   fflush(stdout);
-  idle = E_get_time();
+//  idle = E_get_time();
 }
 
 
@@ -369,11 +364,8 @@ void Read_message() {
 	char 	arg[CHAT_LEN];
 	int 	ret, i, like_num;
   char  tmpmsg[80] = "";
-
-	
 	lts_entry	ref;
   chat_info   *ch;
-  
   
 	for( i=0; i < sizeof(command); i++ ) command[i] = 0;
 	if( fgets( command, 100, stdin ) == NULL ) 
@@ -401,7 +393,7 @@ void Read_message() {
 		}
 		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
 		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
-		send_message(mbox, server_inbox, (char *) out_msg, sizeof(Message));
+		send_message(mbox, my_server_inbox, out_msg);
 		break;
 
 
@@ -433,7 +425,7 @@ void Read_message() {
     /*  Disconnect from current server, if already connected */
     if (state == CONN) {
       E_detach_fd(mbox, READ_FD);
-      leave_group(mbox, server_group);
+      leave_group(mbox, my_server_group);
       SP_disconnect(mbox);
       logdb("DISCONNECTING FROM SPREAD!!!\n");
       state = LOGG;
@@ -490,7 +482,7 @@ void Read_message() {
     }
     
 		prepareLikeMsg(out_msg, &User[3], ref, ADD_LIKE, null_lts);
-		send_message(mbox, server_inbox, (char *) out_msg, sizeof(Message));
+		send_message(mbox, my_server_inbox, out_msg);
 		break;
 
   /* ------------- REMOVE LIKE --------------------------------------*/
@@ -525,7 +517,7 @@ void Read_message() {
 
     
 		prepareLikeMsg(out_msg, &User[3], ref, REM_LIKE, null_lts);
-		send_message(mbox, server_inbox, (char *) out_msg, sizeof(Message));
+		send_message(mbox, my_server_inbox, out_msg);
 		break;
 
 
@@ -555,7 +547,7 @@ void Read_message() {
 
 		/* Send Join message to server */
 		prepareJoinMsg(out_msg, my_room);
-		send_message(mbox, server_inbox, (char *) out_msg, sizeof(Message));
+		send_message(mbox, my_server_inbox, out_msg);
 
     /*  Clients JOIN 2 groups for a room:
      *    1. Spread Distro group for 'my_server' (to receive updates)
@@ -596,7 +588,7 @@ void Read_message() {
     /*  Disconnect from current server, if already connected */
     if (state == CONN) {
       E_detach_fd(mbox, READ_FD);
-      leave_group(mbox, server_group);
+      leave_group(mbox, my_server_group);
       SP_disconnect(mbox);
     }
 
@@ -646,7 +638,7 @@ void Read_message() {
 	}
   Display(0);
   fflush(stdout);
-  idle = E_get_time();
+//  idle = E_get_time();
 }
 
 /*------------------------------------------------------------------------------
@@ -660,7 +652,7 @@ void login_server (int svr)  {
   logdb ("CONNECT to Server <%d>\n", svr);
   my_server = svr - 1;
   server_id = (char)(my_server + (int)'1');
-  server_group[8] = server_id;
+  my_server_group[8] = server_id;
   User[0]         = server_id;
 
   i = 1;
@@ -679,14 +671,14 @@ void login_server (int svr)  {
     logdb("CONNECTED TO SPREAD\n");
   } while (ret != ACCEPT_SESSION);
 
-  join_group(mbox, server_group);
-  server_inbox[7] = server_id;
+  join_group(mbox, my_server_group);
+  my_server_inbox[7] = server_id;
   connected_server[my_server] = TRUE;
 
   logdb("Actual username is <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
   dmesg = sprintf(last_message, "Your username is now set to '%s'\n", &User[3]);
-  logdb("My Server group is %s\n", server_group);
-  logdb("My Server inbox is %s\n", server_inbox);
+  logdb("My Server group is %s\n", my_server_group);
+  logdb("My Server inbox is %s\n", my_server_inbox);
   
   state = CONN;
 }
@@ -700,10 +692,11 @@ void clear_room ()  {
     leave_group(mbox, my_room_distrolist);
     my_room[0] = '\0';
     my_room_distrolist[0] = '\0';
+
     // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
     //  function or we need to free the mem)
+
     chat_room = chat_ll_create();
-//    attendees = client_ll_create();
     displayed_attendees = name_ll_create();
   state = CONN;
 }
@@ -717,10 +710,10 @@ void Initialize() {
 	null_lts.pid = 0;
 	null_lts.ts = 0;
   my_server = -1;
-  display_delay.sec = 1;
-  display_delay.usec = 0;
-  strcpy(server_group, SERVER_GROUP_PREFIX);
-  strcpy(server_inbox, SERVER_NAME_PREFIX);
+//  display_delay.sec = 1;
+//  display_delay.usec = 0;
+  strcpy(my_server_group, SERVER_GROUP_PREFIX);
+  strcpy(my_server_inbox, SERVER_NAME_PREFIX);
   dmesg = sprintf(last_message, 
     "Welcome to distributed chat. Press '?' for help at any time");        
 

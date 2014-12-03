@@ -26,6 +26,7 @@
 #define CHAT_LEN 80
 #define MAX_CLIENTS 100
 #define MAX_SERVERS 5
+#define MAX_INT 2147483638
 
 /*  Actions  */
 #define JOIN 10

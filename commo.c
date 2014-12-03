@@ -62,10 +62,34 @@ int connect_spread (mailbox * box, char user[MAX_GROUP_NAME], char private_group
 }
 
 /*  send_message:  sends a message to provided group  */
-void send_message(mailbox box, char * group, char * msg, int len)   {
+void send_message(mailbox box, char * group, Message * msg)   {
 	int				ret;
-	logdb("Sending to <%s>: '%s'\n", group, msg);
-	ret= SP_multicast(box, AGREED_MESS, group, 2, len, msg);
+  int       len;
+  
+  switch(msg->tag) {
+    case JOIN_MSG:
+      len = JOIN_MSIZE;
+      break;
+    case APPEND_MSG:
+      len = APPEND_MSIZE;
+      break;
+    case LIKE_MSG:
+      len = LIKE_MSIZE;
+      break;
+    case VIEW_MSG:
+      len = VIEW_MSIZE;
+      break;
+    case LTS_VECTOR:
+      len = LTSVECTOR_MSIZE;
+      break; 
+    default:
+      printf("ERROR Bad message received!");
+      exit(0);
+  }
+  
+  
+	logdb("Sending to <%s>: '%s'\n", group, (char *) msg);
+	ret= SP_multicast(box, AGREED_MESS, group, 2, len, (char *) msg);
 	if (ret < 0 )  {
 		SP_error(ret);
 		exit( 0 );
