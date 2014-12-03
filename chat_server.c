@@ -335,7 +335,6 @@ void Except()  {
 }
 
 
-
 /*------------------------------------------------------------------------------
  *   Chat Application event handling functions. These functions are invoked 
  *        in response to actions for chat operations, to include a client
@@ -818,12 +817,6 @@ void create_room (char * name)  {
     room_ll_append(&rooms, new_room);
     logdb("NEW ROOM created, <%s>\n", new_room.name);
           
-    /*  Server JOINs 2 groups for a room: 
-     *   1. Spread Distro group to send updates to clients in the room 
-     *   2. Spread Membership group for attendees  */    	
-    logdb("Attempting to JOIN room, %s, distrolist: %s  [%c]\n", name, distrolist, my_server_id);
-//    join_group(mbox, distrolist);
-//    join_group(mbox, name);
   }
   else {
     logdb("Room '%s' already exists\n", name);
