@@ -371,6 +371,15 @@ void Read_message() {
 	
 	last_command = command[0];
   
+  i = 0;
+  while (i<100) {
+    if (command[i] == '\n')
+      break;
+    i++;
+  }
+  if (i==100) {
+    while (getchar() != '\n');
+  }
 
 	switch(last_command)  {
   
@@ -382,7 +391,7 @@ void Read_message() {
 			dmesg = sprintf(last_message, "Proper usage is u <user_name>");
 			break;
 		}
-		else if (ret > USER_NAME_LIMIT)  {
+		else if (ret > USER_NAME_LIMIT || strlen(command) > USER_NAME_LIMIT+2)  {
 			dmesg = sprintf(last_message, "Please limit your name to %d charaters or less.", USER_NAME_LIMIT);
 			break;
 		}
@@ -464,7 +473,7 @@ void Read_message() {
 			dmesg = sprintf(last_message, "Proper usage is j <room_name> ");
 			break;
 		}
-		else if (ret > MAX_GROUP_NAME) {
+		else if (ret > MAX_GROUP_NAME  || strlen(command) > MAX_GROUP_NAME+2) {
 			dmesg = sprintf(last_message, "Please use a name less than %d characters long.", MAX_GROUP_NAME-12);
       break;
 		}
@@ -504,11 +513,11 @@ void Read_message() {
 			dmesg = sprintf(last_message, "You must be logged in and joined to a room to chat.");
 			break;
 		}
-		if (strlen(arg) > 80) {
-			dmesg = sprintf(last_message, " Text chat too long (80 Char max). Truncating your chat");
-      
+		if (strlen(arg) > CHAT_LEN || strlen(command) > CHAT_LEN+2) {
+			dmesg = sprintf(last_message, " Text chat too long (80 Char max). REJECTING your chat");
+      break;
 		}
-		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
+    logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
 		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
 		send_message(mbox, my_server_inbox, out_msg);
 		break;
