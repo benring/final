@@ -1,4 +1,11 @@
-
+/******************************************************************************
+ * File:     like.c
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  see like.h
+ *
+ *****************************************************************************/
 #include "like_ll.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -108,7 +115,6 @@ int like_ll_insert_inorder(like_ll* list, like_entry data) {
   
   return 1; 
 }
-
 
 int like_ll_insert_inorder_fromback(like_ll* list, like_entry data) {
   /* If list is empty, just append */ 

@@ -1,3 +1,12 @@
+/******************************************************************************
+ * File:     client.h
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  Client List data structure. Client lists are retained
+ *  by the server.
+ *
+ *****************************************************************************/
 #ifndef CLIENT_LL_H
 #define CLIENT_LL_H
 
@@ -8,7 +17,6 @@
 typedef struct client_info {
 	char	name[MAX_GROUP_NAME];   /* Full Spread name */
 	char	user[MAX_GROUP_NAME];	/* Just User Name */
-	char	room[MAX_GROUP_NAME];	/* User's current room */
 } client_info;
 
 

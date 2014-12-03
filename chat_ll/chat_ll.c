@@ -1,7 +1,16 @@
+/******************************************************************************
+ * File:     chat.c
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  see chat.h 
+ *
+ *****************************************************************************/
 #include "chat_ll.h"
 #include "stdio.h"
 #include "stdlib.h"
 
+/* Create an empty list */
 chat_ll chat_ll_create() {
   chat_ll result;
   result.first = 0;
@@ -9,6 +18,7 @@ chat_ll chat_ll_create() {
   return result;
 }
 
+/* Check if the list is empty */
 int chat_ll_is_empty(chat_ll* list) {
   if (list->first) {
     return 0;
@@ -18,6 +28,7 @@ int chat_ll_is_empty(chat_ll* list) {
   }
 }
 
+/* Print the contents of a list */
 void chat_ll_print(chat_ll* list) {
   int   index = 1;
 
@@ -27,13 +38,13 @@ void chat_ll_print(chat_ll* list) {
   else {
     chat_ll_node* curr = list->first;
     while (curr) {
-//      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
       printf("%d. [%s]: %s\n", index++, &(curr->data.chat.user[3]), curr->data.chat.text);
       curr = curr->next;
     }
   }
 }
 
+/* Print last num elements of a list */
 void chat_ll_print_num(chat_ll* list, int num) {
   int   index = 0;
   int   display_min = list->size - num;
@@ -48,7 +59,6 @@ void chat_ll_print_num(chat_ll* list, int num) {
     }
     chat_ll_node* curr = list->first;
     while (curr) {
-//      printf("(%d,%d) | %s: %s\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.chat.user, curr->data.chat.text);
       if (index++ >= display_min) {
         printf("%3d. [%-10s]: %-80s", index, &(curr->data.chat.user[3]), curr->data.chat.text);
         count = like_ll_count_likes(&curr->data.likes);
@@ -63,7 +73,7 @@ void chat_ll_print_num(chat_ll* list, int num) {
   }
 }
 
-
+/* Given an index, retrieve the corresponding LTS value */
 lts_entry chat_ll_get_lts(chat_ll *list, int i) {
   int curr_index = 1;
   lts_entry blank;
@@ -83,6 +93,7 @@ lts_entry chat_ll_get_lts(chat_ll *list, int i) {
 
 }
 
+/* Append to the end of the list */
 int chat_ll_append(chat_ll* list, chat_info data) {
   chat_ll_node *node = malloc(sizeof(chat_ll_node));
   if (!node) {
@@ -106,6 +117,7 @@ int chat_ll_append(chat_ll* list, chat_info data) {
   return 1; /* success */
 }
 
+/* Insert element in order by lts (assuming list is in order) */
 int chat_ll_insert_inorder(chat_ll* list, chat_info data) {
   /* If list is empty, just append */ 
   if(chat_ll_is_empty(list)) {
@@ -155,7 +167,7 @@ int chat_ll_insert_inorder(chat_ll* list, chat_info data) {
   return 1; 
 }
 
-
+/* Insert element in order by lts, searching from the back. (assuming list is in order) */
 int chat_ll_insert_inorder_fromback(chat_ll* list, chat_info data) {
   /* If list is empty, just append */ 
   if(chat_ll_is_empty(list)) {
@@ -205,6 +217,7 @@ int chat_ll_insert_inorder_fromback(chat_ll* list, chat_info data) {
   return 1; 
 }
 
+/* Search the whole (unordered) list for an lts & return the chat*/ 
 chat_info* chat_ll_get(chat_ll* list, lts_entry lts) {
   chat_info* result = 0;
   if (chat_ll_is_empty(list)) {
@@ -223,8 +236,7 @@ chat_info* chat_ll_get(chat_ll* list, lts_entry lts) {
   return result;
 }
 
-
-
+/* Search the list for an lts, terminates early (assuming list is in order) */ 
 chat_info* chat_ll_get_inorder(chat_ll* list, lts_entry lts) {
   chat_info* result = 0;
   if (chat_ll_is_empty(list)) {
@@ -247,6 +259,7 @@ chat_info* chat_ll_get_inorder(chat_ll* list, lts_entry lts) {
   return result;
 }
 
+/* Search an ordered list for an lts from the back, terminates early  (assuming list is in order) */
 chat_info* chat_ll_get_inorder_fromback(chat_ll* list, lts_entry lts) {
   chat_info* result = 0;
   if (chat_ll_is_empty(list)) {
@@ -269,6 +282,7 @@ chat_info* chat_ll_get_inorder_fromback(chat_ll* list, lts_entry lts) {
   return result;
 }
 
+/* Get the # of chats in the list */
 int chat_ll_length(chat_ll *list) {
   int len = 0;
   if (chat_ll_is_empty(list)) {
@@ -284,6 +298,7 @@ int chat_ll_length(chat_ll *list) {
   return len;
 }
 
+/* Removes first element from the list */
 void chat_ll_remove_first(chat_ll *list) {
   chat_ll_node *first;
   if (chat_ll_is_empty(list)) {

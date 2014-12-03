@@ -27,6 +27,53 @@
 #define SUCCESSFUL_UPDATE 4
 #define ALL_all_server_group "server-all"
 
+
+/*===========================================================================
+ *    Data Structures
+ * ==========================================================================*/
+
+/*  Main Server Chat State Data Structures */
+static	int					    my_state;
+static  int		        	connected_svr[MAX_SERVERS];
+static	unsigned int		lts;
+static  room_ll				  rooms;
+static	update_ll			  updates;
+static  update_ll       *pending_updates;
+static  client_ll       connected_clients;
+static  int             num_connected_clients = 0;
+
+
+/* Message handling vars */
+static	char			  User[80];
+static  char    		Private_group[MAX_GROUP_NAME];
+static  mailbox 		mbox;
+static  Message			mess;
+
+/* Spread & server name vars   */
+static 	unsigned int		me;               /* Indexed from 0 */
+static  char    		    my_server_id;     /* Displayed index name (1-5) */
+
+/* Spread group to which ONLY this server joins so clients can send messages */
+static  char				    my_inbox[MAX_GROUP_NAME];         
+
+/* Spread group for all servers */
+static	char				    all_server_group[MAX_GROUP_NAME];   
+
+/* Spread group for all connected clients to track membership */
+static	char				    my_client_group[MAX_GROUP_NAME];    
+
+/* Other in/output vars */
+static	update				       *out_update;
+static  FILE                 *logfile;
+static  char                 logfilename[NAME_LEN];
+
+/* Reconciliation vars */
+static  unsigned int         my_vector[MAX_SERVERS];
+static  unsigned int         expected_vectors[MAX_SERVERS];
+static  unsigned int         my_responsibility[MAX_SERVERS];
+static  lts_entry            min_lts_vector[MAX_SERVERS];
+static  lts_entry            max_lts_vector[MAX_SERVERS];
+
 /*===========================================================================
  * Forward Declared functions 
  * ==========================================================================*/
@@ -76,51 +123,7 @@ void      print_connected_servers ();
 void      print_connected_clients();
 void      print_my_vector();
 
-/*===========================================================================
- *    Data Structures
- * ==========================================================================*/
 
-/*  Main Server Chat State Data Structures */
-static	int					    my_state;
-static  int		        	connected_svr[MAX_SERVERS];
-static	unsigned int		lts;
-static  room_ll				  rooms;
-static	update_ll			  updates;
-static  update_ll       *pending_updates;
-static  client_ll       connected_clients;
-static  int             num_connected_clients = 0;
-
-
-/* Message handling vars */
-static	char			  User[80];
-static  char    		Private_group[MAX_GROUP_NAME];
-static  mailbox 		mbox;
-static  Message			mess;
-
-/* Spread & server name vars   */
-static 	unsigned int		me;               /* Indexed from 0 */
-static  char    		    my_server_id;     /* Displayed index name (1-5) */
-
-/* Spread group to which ONLY this server joins so clients can send messages */
-static  char				    my_inbox[MAX_GROUP_NAME];         
-
-/* Spread group for all servers */
-static	char				    all_server_group[MAX_GROUP_NAME];   
-
-/* Spread group for all connected clients to track membership */
-static	char				    my_client_group[MAX_GROUP_NAME];    
-
-/* Other in/output vars */
-static	update				       *out_update;
-static  FILE                 *logfile;
-static  char                 logfilename[NAME_LEN];
-
-/* Reconciliation vars */
-static  unsigned int         my_vector[MAX_SERVERS];
-static  unsigned int         expected_vectors[MAX_SERVERS];
-static  unsigned int         my_responsibility[MAX_SERVERS];
-static  lts_entry            min_lts_vector[MAX_SERVERS];
-static  lts_entry            max_lts_vector[MAX_SERVERS];
 
 /*------------------------------------------------------------------------------
  *   Main - Server's Appliation MAIN Process execution 
@@ -782,7 +785,6 @@ void create_room (char * name)  {
     /* Build room_info */
     strcpy(new_room.name, name);
     new_room.chats = chat_ll_create();
-    new_room.attendees = client_ll_create();
     distrolist[0] = my_server_id;
     strcpy(&distrolist[1], name);
     strcpy(new_room.distro_group, distrolist);

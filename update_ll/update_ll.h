@@ -1,3 +1,14 @@
+/******************************************************************************
+ * File:     update.h
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  Update list data structure. The Update list is used by the
+ *  server to retain all the updates received from both clients and other
+ *  servers. The list is sorted by LTS for efficiency. Provides functions for
+ *  create, print, insert, access, and clear.
+ *
+ *****************************************************************************/
 #ifndef UPDATE_LL_H
 #define UPDATE_LL_H
 

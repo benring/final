@@ -1,3 +1,11 @@
+/******************************************************************************
+ * File:     update.c
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  see update.h
+ *
+ *****************************************************************************/
 #include "update_ll.h"
 #include "stdio.h"
 #include "stdlib.h"

@@ -1,7 +1,16 @@
+/******************************************************************************
+ * File:     room.c
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  see room.h
+ *
+ *****************************************************************************/
 #include "room_ll.h"
 #include "stdio.h"
 #include "stdlib.h"
 
+/* Create an empty list */
 room_ll room_ll_create() {
   room_ll result;
   result.first = 0;
@@ -9,6 +18,7 @@ room_ll room_ll_create() {
   return result;
 }
 
+/* Check if the list is empty */
 int room_ll_is_empty(room_ll* list) {
   if (list->first) {
     return 0;
@@ -18,25 +28,8 @@ int room_ll_is_empty(room_ll* list) {
   }
 }
 
-void room_ll_print(room_ll* list) {
-  if (room_ll_is_empty(list)) {
-    printf("Empty List\n");
-  }
-  else {
-    /*
-    printf("First: (%d,%d)\n", list->first->data.lts.ts, list->first->data.lts.pid);
-    printf("Last: (%d,%d)\n", list->last->data.lts.ts, list->last->data.lts.pid);
-    printf("Contents: \n");
-    room_ll_node* curr = list->first;
-    while (curr) {
-      printf("(%d,%d)\n", curr->data.lts.ts, curr->data.lts.pid);
-      curr = curr->next;
-    }
-    */
-  }
-  
-}
 
+/* Append to the end of the list */
 int room_ll_append(room_ll* list, room_info data) {
   room_ll_node *node = malloc(sizeof(room_ll_node));
 	room_ll_node *old_last;
@@ -44,11 +37,9 @@ int room_ll_append(room_ll* list, room_info data) {
   if (!node) {
     return 0; /* failure */
   }
-
   node->data = data;
   node->prev = 0;
   node->next = 0;
-
   if(room_ll_is_empty(list)) {
     list->first = node;
     list->last = node;
@@ -59,11 +50,11 @@ int room_ll_append(room_ll* list, room_info data) {
     node->prev = old_last;
     list->last = node;
   }
-  
-
   return 1; /* success */
 }
 
+
+/* Search the whole (unordered) list for an given roomname */ 
 room_info* room_ll_get(room_ll* list, char * name) {
   room_info* result = 0;
   room_ll_node* curr = list->first;

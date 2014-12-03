@@ -1,3 +1,12 @@
+/******************************************************************************
+ * File:     name.c
+ * Authors:  Benjamin Ring & Josh Wheeler
+ * Date:     5 December 2014
+ *
+ * Description:  see name.h
+ *
+ *****************************************************************************/
+
 #include "name_ll.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -118,7 +127,6 @@ int name_ll_remove(name_ll* list, char *name)
   }
   return 0;
 }
-
 
 
 int name_ll_search(name_ll* list, char *name)

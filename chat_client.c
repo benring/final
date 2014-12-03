@@ -337,7 +337,7 @@ void Read_message() {
       /* OTHERWISE: Ignore other servers joining/leaving  */
 
     }
-    else {
+    else if (strcmp(sender, my_room) == 0) {
       /* Some other client has joined/left our room  */
       process_client_change(num_target_groups, target_groups);
     }
@@ -373,28 +373,48 @@ void Read_message() {
   
 
 	switch(last_command)  {
-
-  /* ------------- APPEND --------------------------------------*/
-	case 'a':
-		ret = sscanf(&command[2], "%[^\n]s", arg);
-		if( ret < 1 )  {
-			dmesg = sprintf(last_message, "Proper usage is a <chat_text>");
+  
+  /* ------------- USERNAME --------------------------------------*/
+	case 'u':
+		logdb("SETTING USERNAME\n");
+		ret = sscanf(&command[2], "%s", arg);
+		if (ret < 1) {
+			dmesg = sprintf(last_message, "Proper usage is u <user_name>");
 			break;
 		}
-		else if (state < RUN) {
-			dmesg = sprintf(last_message, "You must be logged in and joined to a room to chat.");
+		else if (ret > USER_NAME_LIMIT)  {
+			dmesg = sprintf(last_message, "Please limit your name to %d charaters or less.", USER_NAME_LIMIT);
 			break;
 		}
-		if (strlen(arg) > 80) {
-			dmesg = sprintf(last_message, " Text chat too long (80 Char max). Truncating your chat");
-      
-		}
-		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
-		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
-		send_message(mbox, my_server_inbox, out_msg);
+    /*  Depart room, if joined to a room */
+    if (state == RUN) {
+      clear_room();
+      state = CONN;
+    }
+    /*  Disconnect from current server, if already connected */
+    if (state == CONN) {
+      E_detach_fd(mbox, READ_FD);
+      leave_group(mbox, my_server_group);
+      SP_disconnect(mbox);
+    }
+    
+    /* Set Null values for the client_id portion of the username */
+		User[0] = '0';
+		User[1] = '0';
+		User[2] = '0';
+		strcpy(&User[3], arg);
+		logdb("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
+		dmesg = sprintf(last_message, "Your username is now set to '%s'", &User[3]);
+    
+    if (state == CONN) {
+      login_server(my_server + 1);  /* Log back into same server */
+    }
+    else {
+      state = LOGG;
+    }
 		break;
-
-
+  
+  
   /* ------------- CONNECT --------------------------------------*/
 	case 'c':
 		ret = sscanf(&command[2], "%s", arg);
@@ -428,20 +448,71 @@ void Read_message() {
       logdb("DISCONNECTING FROM SPREAD!!!\n");
       state = LOGG;
     }
-
     login_server(atoi(arg));
-
 		break;
-
-  /* ------------- HISTORY --------------------------------------*/
-	case 'h':
-		if (state < RUN) {
-			dmesg = sprintf(last_message, "You must be logged in and joined to a room to request a chat history");
+ 
+  
+  
+  /* ------------- JOIN --------------------------------------*/
+	case 'j':
+		ret = sscanf(&command[2], "%s", arg);
+		if (state < CONN) {
+			dmesg = sprintf(last_message, "You must be logged in and connected to a server to join a room.");
 			break;
 		}
-    chat_lines_to_display = -1;
-		
+    else if( ret < 1 )  {
+			dmesg = sprintf(last_message, "Proper usage is j <room_name> ");
+			break;
+		}
+		else if (ret > MAX_GROUP_NAME) {
+			dmesg = sprintf(last_message, "Please use a name less than %d characters long.", MAX_GROUP_NAME-12);
+      break;
+		}
+
+   /*  Depart room, if joined to a room */
+    if (state == RUN) {
+      clear_room();
+    }
+
+		logdb ("JOIN ROOM: <%s>\n", my_room);
+		strcpy(my_room, arg);
+
+		/* Send Join message to server */
+		prepareJoinMsg(out_msg, my_room);
+		send_message(mbox, my_server_inbox, out_msg);
+
+    /*  Clients JOIN 2 groups for a room:
+     *    1. Spread Distro group for 'my_server' (to receive updates)
+     *    2. Spread Membership group for attendees  */
+    my_room_distrolist[0] = User[0];
+ 		strcpy(&my_room_distrolist[1], my_room);
+    join_group(mbox, my_room_distrolist);
+    join_group(mbox, my_room);
+    
+		state = RUN;
 		break;
+  
+  
+  /* ------------- APPEND --------------------------------------*/
+	case 'a':
+		ret = sscanf(&command[2], "%[^\n]s", arg);
+		if( ret < 1 )  {
+			dmesg = sprintf(last_message, "Proper usage is a <chat_text>");
+			break;
+		}
+		else if (state < RUN) {
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to chat.");
+			break;
+		}
+		if (strlen(arg) > 80) {
+			dmesg = sprintf(last_message, " Text chat too long (80 Char max). Truncating your chat");
+      
+		}
+		logdb ("Appending: <%s> to room: <%s>\n", arg, my_room);
+		prepareAppendMsg(out_msg, my_room, User, arg, null_lts);
+		send_message(mbox, my_server_inbox, out_msg);
+		break;
+
 
   /* ------------- LIKE --------------------------------------*/
 	case 'l':
@@ -496,11 +567,8 @@ void Read_message() {
 		}
 		// OTHER LIKE ERROR CHECKING GOES HERE
     like_num = atoi(arg);
-		
     ref = chat_ll_get_lts(&chat_room, like_num);
-
 		logdb ("Trying to Un-Like Chat # <%d>, LTS: (%d,%d)\n", like_num,ref.ts, ref.pid);
-
     
     if (lts_eq(ref, null_lts)) {
       dmesg = sprintf(last_message, "You cannot Un-like a chat that does not exist.");
@@ -512,99 +580,12 @@ void Read_message() {
       dmesg = sprintf(last_message, "You cannot Un-like a chat you do not like.");
       break;
     }
-
     
 		prepareLikeMsg(out_msg, &User[3], ref, REM_LIKE, null_lts);
 		send_message(mbox, my_server_inbox, out_msg);
 		break;
 
 
-  /* ------------- JOIN --------------------------------------*/
-	case 'j':
-		ret = sscanf(&command[2], "%s", arg);
-		if (state < CONN) {
-			dmesg = sprintf(last_message, "You must be logged in and connected to a server to join a room.");
-			break;
-		}
-    else if( ret < 1 )  {
-			dmesg = sprintf(last_message, "Proper usage is j <room_name> ");
-			break;
-		}
-		else if (ret > MAX_GROUP_NAME) {
-			dmesg = sprintf(last_message, "Please use a name less than %d characters long.", MAX_GROUP_NAME-12);
-      break;
-		}
-
-   /*  Depart room, if joined to a room */
-    if (state == RUN) {
-      clear_room();
-    }
-
-		logdb ("JOIN ROOM: <%s>\n", my_room);
-		strcpy(my_room, arg);
-
-		/* Send Join message to server */
-		prepareJoinMsg(out_msg, my_room);
-		send_message(mbox, my_server_inbox, out_msg);
-
-    /*  Clients JOIN 2 groups for a room:
-     *    1. Spread Distro group for 'my_server' (to receive updates)
-     *    2. Spread Membership group for attendees  */
-    my_room_distrolist[0] = User[0];
- 		strcpy(&my_room_distrolist[1], my_room);
-    join_group(mbox, my_room_distrolist);
-    join_group(mbox, my_room);
-    
-		state = RUN;
-		break;
-
-  /* ------------- QUIT --------------------------------------*/
-	case 'q':
-		logdb("QUITTING\n");
-		disconn_spread(mbox);
-		break;
-		
-  /* ------------- USERNAME --------------------------------------*/
-	case 'u':
-		logdb("SETTING USERNAME\n");
-		ret = sscanf(&command[2], "%s", arg);
-		if (ret < 1) {
-			dmesg = sprintf(last_message, "Proper usage is u <user_name>");
-			break;
-		}
-		else if (ret > USER_NAME_LIMIT)  {
-			dmesg = sprintf(last_message, "Please limit your name to %d charaters or less.", USER_NAME_LIMIT);
-			break;
-		}
-    
-    // TODO:  Check requirements, may need to logout/disconn completely 
-    /*  Depart room, if joined to a room */
-    if (state == RUN) {
-      clear_room();
-      state = CONN;
-    }
-    /*  Disconnect from current server, if already connected */
-    if (state == CONN) {
-      E_detach_fd(mbox, READ_FD);
-      leave_group(mbox, my_server_group);
-      SP_disconnect(mbox);
-    }
-
-    
-		User[0] = '0';
-		User[1] = '0';
-		User[2] = '0';
-		strcpy(&User[3], arg);
-		logdb("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
-		dmesg = sprintf(last_message, "Your username is now set to '%s'", &User[3]);
-    
-    if (state == CONN) {
-      login_server(my_server + 1);  /* Log back into same server */
-    }
-    else {
-      state = LOGG;
-    }
-		break;
 		
   /* ------------- VIEW SERVERS --------------------------------------*/
 	case 'v':
@@ -621,8 +602,25 @@ void Read_message() {
       }
     }
     strcat(last_message, "  ]");
-
 		break;
+
+
+  /* ------------- HISTORY --------------------------------------*/
+	case 'h':
+		if (state < RUN) {
+			dmesg = sprintf(last_message, "You must be logged in and joined to a room to request a chat history");
+			break;
+		}
+    chat_lines_to_display = -1;
+		break;
+  
+
+  /* ------------- QUIT --------------------------------------*/
+	case 'q':
+		logdb("QUITTING\n");
+		disconn_spread(mbox);
+		break;
+
 
   /* ------------- PRINT MENU --------------------------------------*/
 	case '?':
