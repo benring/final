@@ -133,7 +133,7 @@ int main (int argc, char *argv[])  {
   	  exit(0);
   }
 
-  logdb("[TRANSITION] Entering INIT state. Connecting and initializing Spread. \n");
+  loginfo("[TRANSITION] Entering INIT state. Connecting and initializing Spread. \n");
   my_state = INIT;
   Initialize(argv[1]);
 
@@ -141,7 +141,7 @@ int main (int argc, char *argv[])  {
   connect_spread(&mbox, User, Private_group);
 
   /* Initiate Membership join  */
-  logdb("[TRANSITION] Entering READY state. Spread is connected. Recover from disk and join Spread groups. \n");
+  loginfo("[TRANSITION] Entering READY state. Spread is connected. Recover from disk and join Spread groups. \n");
   my_state = READY;
   
   /* Read the log file */ 
@@ -160,7 +160,7 @@ int main (int argc, char *argv[])  {
   join_group(mbox, my_client_group);
   join_group(mbox, my_inbox);
 
-  logdb("[TRANSITION] Entering RUN state. Attach handlers and start processing messages.\n");
+  loginfo("[TRANSITION] Entering RUN state. Attach handlers and start processing messages.\n");
   my_state = RUN;
 
   /* Initiate Spread system event handling loop */
@@ -321,7 +321,7 @@ void Initialize (char * server_index) {
  *   Except -- event handler for respond to Spread exceptions
  *----------------------------------------------------------------------------*/
 void Except()  {
-  logdb("EXECPTION received from Spread. Quitting.\n");
+  loginfo("EXECPTION received from Spread. Quitting.\n");
   disconn_spread(mbox);
 }
 
@@ -345,13 +345,13 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       /* Send the connected_servers to the client */
       prepareViewMsg(&out_msg, connected_svr);
       send_message(mbox, client, &out_msg);
-      logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
+      loginfo("VIEW Request. Sending list of servers to client <%s>\n", client);
       break;
 		
     case JOIN_MSG :
       /* Create and Apply an Update. Send it out to serevers. Then send history to client */
       jm = (JoinMessage *) mess.payload;
-      logdb("JOIN Request from user: client <%s> joins room <%s>\n", client, jm->room);
+      loginfo("JOIN Request from user: client <%s> joins room <%s>\n", client, jm->room);
       create_room(jm->room);
       send_history_to_client(jm->room, client);
       break;
@@ -359,7 +359,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
     case APPEND_MSG :
       /*  Create and Apply an Update. Send it out to Servers */
       am = (AppendMessage *) mess.payload;
-      logdb("APPEND Request from user: <%s> on client: <%s>, for room <%s>. Msg is '%s'\n", am->user, client, am->room, am->text);
+      loginfo("APPEND Request from user: <%s> on client: <%s>, for room <%s>. Msg is '%s'\n", am->user, client, am->room, am->text);
       build_chatEntry(am->user, am->room, am->text);
       apply_update(out_update, TRUE, TRUE);
       prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
@@ -369,8 +369,8 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
     case LIKE_MSG: 
       /* Create and Apply an Update. Send it out to Servers */
       lm = (LikeMessage *) mess.payload;
-      logdb("LIKE Request from user: <%s> on client: <%s>\n", lm->user, client);
-      logdb("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
+      loginfo("LIKE Request from user: <%s> on client: <%s>. ", lm->user, client);
+      loginfo("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
       
       build_likeEntry(lm->user, lm->ref, lm->action);
       apply_update(out_update, TRUE, TRUE);
@@ -421,7 +421,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     }
   }
 
-  logdb("Server membership has changed. Current members:\n")
+  loginfo("Server membership has changed. Current members:\n")
   print_connected_servers();
 
   /*  Send updated list of connected servers to all clients  */
@@ -439,7 +439,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   }
   if (new_members && sum > 1) {
     my_state = RECONCILE;
-    logdb("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
+    loginfo("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
     update_my_vector();
     print_my_vector();
 
@@ -562,15 +562,16 @@ void handle_lts_vector() {
       }
     }
 
+    loginfo("Received all Vectors: Min/Max:\n");
     /* Log the Min/Max receieved for each server */
     for (i = 0; i < MAX_SERVERS; i++) {
-       logdb ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
+       loginfo ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
     }
 
     /* Log updates that this server is responsible for */
     for (i = 0; i < MAX_SERVERS; i++) {
       if(my_responsibility[i]) {
-        logdb("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
+        loginfo("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
       }
     }
 
@@ -594,7 +595,7 @@ void handle_lts_vector() {
     }
     
     /* Finished RECONCILE state */ 
-    logdb("[TRANSITION] Done with RECONCILE. Entering RUN state.\n");
+    loginfo("[TRANSITION] Done with RECONCILE. Entering RUN state.\n");
     my_state = RUN;
   }
 }
@@ -623,7 +624,7 @@ void handle_server_update() {
       strcpy(ce->room, am->room);
       strcpy(ce->text, am->text);
 
-      logdb("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
+      loginfo("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
       break;  
       
     case LIKE_MSG:
@@ -639,7 +640,7 @@ void handle_server_update() {
       le->action = lm->action;
       le->lts = lm->ref;
 
-      logdb("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
+      loginfo("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
       break;
 
     default:
@@ -676,7 +677,7 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     }
   }
 
-  logdb("Membership change in clients. New List: \n");
+  loginfo("Membership change in clients. New List: \n");
   print_connected_clients();
 }
 
@@ -788,7 +789,7 @@ void create_room (char * name)  {
   
     /* Append to room list */
     room_ll_append(&rooms, new_room);
-    logdb("NEW ROOM created, <%s>\n", new_room.name);
+    loginfo("NEW ROOM created, <%s>\n", new_room.name);
           
   }
   else {
@@ -816,7 +817,7 @@ int apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients) {
   /* Grab the list of chats for the room */
   chat_list = &(rm->chats);
   if (!chat_list) {
-    logdb("ERROR! Chat list does not exist for this room\n");
+    logerr("ERROR! Chat list does not exist for this room\n");
     return UNHANDLED_UPDATE;
   }
  
@@ -935,7 +936,6 @@ void try_pending_updates() {
   }
 
   // Swap lists
-  // TODO clear() function to free each node
   update_ll_clear(pending_updates);
   free(pending_updates);
   pending_updates = newpending;
@@ -964,7 +964,7 @@ int recover_from_disk(update_ll *list) {
     num_in_log++;
   }
   
-  logdb("RECOVERY: Recovered %d Updates\n", num_in_log);
+  loginfo("RECOVERY: Recovered %d Updates\n", num_in_log);
   return num_in_log;
 }
 
@@ -1081,11 +1081,11 @@ void add_client(char *name) {
 /* Helper functions for display  */
 void print_my_vector() {
   int i; 
-  printf("My vector:\n");
+  logdb("My vector:\n");
   for(i = 0; i < MAX_SERVERS; i++) {
-    printf("%d ", my_vector[i]);
+   logdb("%d ", my_vector[i]);
   }
-  printf("\n");
+  logdb("\n");
 }
 
 void print_connected_servers () {
