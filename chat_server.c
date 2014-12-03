@@ -343,7 +343,6 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
   Message        out_msg;
   JoinMessage 	 *jm;
   AppendMessage  *am;
-  HistoryMessage *hm;
   LikeMessage 	 *lm;
   
   logdb("Client Request:  %c\n", mess.tag);
@@ -356,16 +355,10 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       logdb("VIEW Request. Sending list of servers to client <%s>\n", client);
       break;
 		
-    case HISTORY_MSG :
-      // TODO this is a no op right now. If the client already has the history, maybe we remove this type of MSG
-      hm = (HistoryMessage *) mess.payload;
-      logdb("HISTORY Request from user: <%s> on client: <%s>, for room <%s>\n", hm->user, client, hm->room);
-      break;
-
     case JOIN_MSG :
       /* Create and Apply an Update. Send it out to serevers. Then send history to client */
       jm = (JoinMessage *) mess.payload;
-      logdb("JOIN Request from user: <%s> on client: <%s>, for room <%s>\n", jm->user, client, jm->room);
+      logdb("JOIN Request from user: client <%s> joins room <%s>\n", client, jm->room);
       create_room(jm->room);
       send_history_to_client(jm->room, client);
       break;
@@ -906,16 +899,11 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
 }
 
 int incorporate_into_state(update *u, int send_clients) {
-//  room_entry  *re;
   chat_entry  *ce;
   like_entry  *le;
   int result;
   
   switch (u->tag)  {
-//    case ROOM: 
-//      re = (room_entry *) &(u->entry);
-//      result = apply_room_update (re->room);
-//      break;
 		
     case CHAT:
       ce = (chat_entry *) &(u->entry);
@@ -1015,11 +1003,6 @@ void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
   like_entry  *le;
 
   switch (u->tag)  {
-//    case ROOM: 
-//      re = (room_entry *) &(u->entry);
-//      logdb("Resending room update on %s\n", re->room);
-//      prepareJoinMsg (&out_msg, re->room, "RECONCILE", u->lts);
-//      break;
 		
     case CHAT:
       ce = (chat_entry *) &(u->entry);

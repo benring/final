@@ -11,13 +11,11 @@
 
 #include "config.h"
 #include "lts_utils.h"
-//#include "like_ll.h"
 
 #define ROOM 'R'
 #define CHAT 'C'
 #define LIKE 'L'
 
-// TODO:  Verify this can be about 150
 #define MAX_ENTRY_SIZE 150
 
 typedef struct update {

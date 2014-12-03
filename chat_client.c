@@ -21,16 +21,6 @@
 #define USER_NAME_LIMIT 10
 #define DEFAULT_LINE_DISPLAY 25
 
-/* Message handling vars */
-static	char		    User[USER_NAME_LIMIT];
-static  char    	  Private_group[MAX_GROUP_NAME];
-static  mailbox 	  mbox;
-static  Message		  *out_msg;
-static  Message     in_msg;
-static	lts_entry		null_lts;
-static  sp_time     display_delay;
-static  sp_time     idle;
-
 /*  Client Global State  */
 static	int			  state;
 static	char		  server_group[MAX_GROUP_NAME];
@@ -42,6 +32,18 @@ static  chat_ll   chat_room;
 static  name_ll   displayed_attendees;
 static  int       connected_server[MAX_SERVERS];
 static  int       my_server;    /* Indexed from 0,  -1 means disconnected */
+
+
+/* Message handling vars */
+static	char		    User[USER_NAME_LIMIT];
+static  char    	  Private_group[MAX_GROUP_NAME];
+static  mailbox 	  mbox;
+static  Message		  *out_msg;
+static  Message     in_msg;
+static	lts_entry		null_lts;
+static  sp_time     display_delay;
+static  sp_time     idle;
+
 
 /* User Interface vars */
 static 	char		  last_command;
@@ -366,6 +368,8 @@ void Read_message() {
 	char	command[100];
 	char 	arg[CHAT_LEN];
 	int 	ret, i, like_num;
+  char  tmpmsg[80] = "";
+
 	
 	lts_entry	ref;
   chat_info   *ch;
@@ -445,9 +449,6 @@ void Read_message() {
 			dmesg = sprintf(last_message, "You must be logged in and joined to a room to request a chat history");
 			break;
 		}
-		logdb ("Sending history request for <%s>\n", my_room);
-//		prepareHistoryMsg(out_msg, my_room, User);
-//		send_message(mbox, server_inbox, out_msg, sizeof(Message));
     chat_lines_to_display = -1;
 		
 		break;
@@ -553,7 +554,7 @@ void Read_message() {
 		strcpy(my_room, arg);
 
 		/* Send Join message to server */
-		prepareJoinMsg(out_msg, my_room, User, null_lts);
+		prepareJoinMsg(out_msg, my_room);
 		send_message(mbox, server_inbox, (char *) out_msg, sizeof(Message));
 
     /*  Clients JOIN 2 groups for a room:
@@ -622,10 +623,16 @@ void Read_message() {
 			dmesg = sprintf(last_message, "You must be logged in and connected to a server to view connected servers.");
 			break;
 		}
-		logdb("Sending view server request to server, %s\n", server_inbox);
-		
-		out_msg->tag = VIEW_MSG;
-		send_message (mbox, server_inbox, (char *) out_msg, sizeof(Message));
+
+    strcpy(last_message, "CONNECTED servers:  [ ");
+    for (i=0; i<MAX_SERVERS; i++) {
+      if (connected_server[i]) {
+        dmesg = sprintf(tmpmsg, " <SVR %d>", i+1);
+        strcat(last_message, tmpmsg);
+      }
+    }
+    strcat(last_message, "  ]\n");
+
 		break;
 
   /* ------------- PRINT MENU --------------------------------------*/

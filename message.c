@@ -21,26 +21,14 @@ void prepareViewMsg (Message * m, int svr[MAX_SERVERS]) {
 }
 
 /* Prepare a Join Message for joining a new room */
-void prepareJoinMsg (Message * m, char * roomname, char * user, lts_entry lts) {
+void prepareJoinMsg (Message * m, char * roomname) {
 	JoinMessage *jm;
-	logdb("Preparing Join Msg:  room: <%s>, user: <%s>\n", roomname, user);
+	logdb("Preparing Join Msg:  room: <%s>\n", roomname);
 	m->tag = JOIN_MSG;
 	jm = (JoinMessage *) &(m->payload);
-	strcpy(jm->user, user);
 	strcpy(jm->room, roomname);
-	jm->lts.pid = lts.pid;
-	jm->lts.ts = lts.ts;
 }
 
-/* Prepare a History Message for requesting/sending chat history */
-void prepareHistoryMsg (Message * m, char * roomname, char * user) {
-	HistoryMessage *hm;
-	logdb("Preparing History Msg:  room: <%s>, user: <%s>\n", roomname, user);
-	m->tag = HISTORY_MSG;
-	hm = (HistoryMessage *) &(m->payload);
-	strcpy(hm->user, user);
-	strcpy(hm->room, roomname);
-}
 
 /* Prepare a Append Message for a new user chat text */
 void prepareAppendMsg (Message * m, char * roomname, char * user, char * text, lts_entry lts) {

@@ -13,6 +13,11 @@
 #include "transaction.h"
 
 #define MAX_MESSAGE_SIZE 1024
+#define JOIN_MSIZE (sizeof(JoinMessage) + sizeof(char))
+#define APPEND_MSIZE (sizeof(AppendMessage) + sizeof(char))
+#define LIKE_MSIZE (sizeof(LikeMessage) + sizeof(char))
+#define VIEW_MSIZE (sizeof(ViewMessage) + sizeof(char))
+#define LTSVECTOR_MSIZE (sizeof(LTSVectorMessage) + sizeof(char))
 
 /*  Message Tag Codes  */
 #define LTS_VECTOR 'T'
@@ -30,9 +35,7 @@ typedef struct Message {
 } Message;
 
 typedef struct JoinMessage {
-	char	user[NAME_LEN];
 	char	room[NAME_LEN];
-	lts_entry	lts;
 } JoinMessage;
 
 typedef struct AppendMessage {
@@ -44,29 +47,23 @@ typedef struct AppendMessage {
 
 typedef struct LikeMessage {
 	char		user[NAME_LEN];
-	lts_entry	lts;
-	char		action;
 	lts_entry	ref;
+	char		action;
+	lts_entry	lts;
 } LikeMessage;
-
-typedef struct HistoryMessage {
-	char	user[NAME_LEN];
-	char	room[NAME_LEN];
-} HistoryMessage;
 
 typedef struct ViewMessage {
 	int		connected_server[5];
 } ViewMessage;
 
 typedef struct LTSVectorMessage {
-        unsigned  int sender;
+  unsigned  int sender;
 	unsigned  int lts[MAX_SERVERS];
 } LTSVectorMessage;
 
 
-
 /* Prepare a Join Message for joining a new room */
-void prepareJoinMsg (Message * m, char * roomname, char * user, lts_entry lts);
+void prepareJoinMsg (Message * m, char * roomname);
 
 /* Prepare a Append Message for a new user chat text */
 void prepareAppendMsg (Message * m, char * roomname, 
@@ -78,10 +75,6 @@ void prepareLikeMsg (Message * m, char * user,
 
 /* Prepare a View Message for sending connected servers in network view  */
 void prepareViewMsg (Message * m, int svr[MAX_SERVERS]);
-
-/* Prepare a History Message for requesting/sending chat history */
-void prepareHistoryMsg (Message * m, char * roomname, char * user);
-
 
 
 #endif
