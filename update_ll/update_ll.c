@@ -239,3 +239,24 @@ int update_ll_clear(update_ll* list) {
   list->last = 0;
   return 1;
 }
+
+int update_ll_delete_upto(update_ll *list, lts_entry lts) {
+  update_ll_node* curr = list->first;
+
+  while(lts_lessthan(curr->data.lts, lts)) {
+    // delete first element in list
+    list->first = curr->next;
+    free(curr);
+    
+    if(list->first) {
+      list->first->prev = 0;
+    }
+    else {
+      // List is empty now
+      list->last = 0;
+    }
+
+    curr = list->first;
+  }
+  return 0;
+}
