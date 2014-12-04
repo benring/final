@@ -29,15 +29,15 @@ int like_ll_is_empty(like_ll* list) {
 void like_ll_print(like_ll* list) {
   like_ll_node* curr;
   if (like_ll_is_empty(list)) {
-    printf("Empty List\n");
+    logdb("Empty List\n");
   }
   else {
-    printf("First: (%d,%d)\n", list->first->data.lts.ts, list->first->data.lts.pid);
-    printf("Last: (%d,%d)\n", list->last->data.lts.ts, list->last->data.lts.pid);
-    printf("Contents: \n");
+    logdb("First: (%d,%d)\n", list->first->data.lts.ts, list->first->data.lts.pid);
+    logdb("Last: (%d,%d)\n", list->last->data.lts.ts, list->last->data.lts.pid);
+    logdb("Contents: \n");
     curr = list->first;
     while (curr) {
-      printf("(%d,%d) '%s'\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.user);
+      logdb("(%d,%d) '%s'\n", curr->data.lts.ts, curr->data.lts.pid, curr->data.user);
       curr = curr->next;
     }
   }
@@ -296,7 +296,6 @@ int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char
   logdb("Searching for user %s likes\n", user);
   old_like = like_ll_get_user(like_list, user);
   if (old_like) {
-    printf("FOUND OLD LIKE for %s: (%d, %d)\n", user, old_like->lts.ts, old_like->lts.pid);
     if (lts_greaterthan(like_lts, old_like->lts)) {
       logdb("Updating like status from %c to %c for user %s\n", old_like->action, action, user);
       old_like->lts = like_lts;
