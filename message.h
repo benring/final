@@ -81,6 +81,6 @@ void prepareLikeMsg (Message * m, char * user,
 void prepareViewMsg (Message * m, int svr[MAX_SERVERS]);
 
 /* Prepare a LTSVector Message for sending to servers */
-void prepareLTSMsg (Message *m, int from, int lts[MAX_SERVERS], int f);
+void prepareLTSMsg (Message *m, int from, unsigned int lts[MAX_SERVERS], int f);
 
 #endif

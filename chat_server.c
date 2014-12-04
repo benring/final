@@ -39,7 +39,8 @@ static	unsigned int		lts;
 static  room_ll				  rooms;
 static	update_ll			  updates;
 static  update_ll       *pending_updates;
-static  int             min_update[MAX_SERVERS];
+static  int             min_update_matrix[MAX_SERVERS][MAX_SERVERS];
+static  int             min_update_vector[MAX_SERVERS];
 static  client_ll       connected_clients;
 static  int             num_connected_clients = 0;
 
@@ -104,15 +105,16 @@ int     apply_like_update(lts_entry ref, lts_entry like_lts,
                               char* user, char action, int send_clients);
 int     incorporate_into_state(update *u, int send_clients);
 void    try_pending_updates();
+void    apply_lts_vector (int svr, unsigned int lts[MAX_SERVERS]);
 
 /*  Functions to manage reconciling & recovery for fault tolerance */
 int     recover_from_disk(update_ll *list);
 void    resend_update (update *u);
-void    update_my_vector();
 void    Initialize_Reconcile_Data();
 void    Handle_lts_vector();
 void    Determine_updates_to_send();
 void    Send_updates();
+
 
 /*  Other functions for server operations */
 void    send_history_to_client(char *roomname, char *client);
@@ -126,6 +128,7 @@ void      add_client(char *name);
 void      print_connected_servers ();
 void      print_connected_clients();
 void      print_my_vector();
+void      print_lts_vector(unsigned int v[MAX_SERVERS]);
 
 
 
@@ -279,7 +282,7 @@ void	Read_message()   {
  *   Inialize -- conduct program intiation
  *----------------------------------------------------------------------------*/
 void Initialize (char * server_index) {
-  int 		i;
+  int 		i, j;
   char 		index;
   int    serverid;
 
@@ -315,7 +318,10 @@ void Initialize (char * server_index) {
     max_lts_vector[i].pid = MAX_SERVERS+1;
     min_lts_vector[i].ts = MAX_INT;
     max_lts_vector[i].ts = 0;
-    min_update[i] = MAX_INT;
+    min_update_vector[i] = 0;
+    for (j=0; j<MAX_SERVERS; j++) {
+      min_update_matrix[i][j] = 0;
+    }
   }
   
   /* Do other program initialization */
@@ -456,7 +462,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   if (new_members && sum > 1) {
     my_state = RECONCILE;
     loginfo("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
-    update_my_vector();
+//    update_my_vector();
 
     Initialize_Reconcile_Data();
 
@@ -467,7 +473,6 @@ void Initialize_Reconcile_Data () {
   int i;
   Message out_msg;
   lts_entry my_entry;
-  LTSVectorMessage  *ltsm;
   
   /*  1a. Initialize Reconcile Data variables */
   for (i=0; i < MAX_SERVERS; i++) {
@@ -637,7 +642,6 @@ void handle_server_update() {
   LTSVectorMessage     *ltsm;
   chat_entry     *ce;
   like_entry     *le;
-  int             i;
   
   logdb("Received '%c' Update from server\n", mess.tag);
 
@@ -657,6 +661,8 @@ void handle_server_update() {
       strcpy(ce->text, am->text);
 
       loginfo("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
+
+      
       apply_update(&new_update, TRUE, TRUE);
       break;  
       
@@ -683,24 +689,12 @@ void handle_server_update() {
       /*  Recv: Reconcile LTS Vector, should only process if in reconcile state */
       if (my_state == RECONCILE && ltsm->flag == LTS_RECONCILE) {
         Handle_lts_vector();
-      
       }
       /*  Recv: periodic LTS Vector, should only process if in run state */
       else if (my_state == RUN && ltsm->flag == LTS_PERIODIC) {
-        
-        loginfo("Received periodic LTS Vector from %d\n", ltsm->sender);
-        
-        /* Check min LTS and trim unnecessary Updates from global state log */
-        
-        for (i=0; i<MAX_SERVERS; i++) {
-          if (ltsm->lts[i] < min_update[i]) {
-            min_update[i] = ltsm->lts[i];
-            update_ll_print(&updates);
-            update_ll_trim(&updates, min_update[i], i);
-            update_ll_print(&updates);
-          }
-        }
-
+        loginfo("Received periodic LTS Vector from %d:  ", ltsm->sender);
+        print_lts_vector(ltsm->lts);
+        apply_lts_vector(ltsm->sender, ltsm->lts);
       }
       else {
         /* Ignoring LTS messages which could skew reconcile logic */
@@ -807,6 +801,12 @@ int apply_update (update * u, int shouldLog, int send_clients) {
   if (update_ll_get_inorder_fromback(&updates, u->lts)) {
     logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
     return DUPLICATE_UPDATE;
+  }
+  
+  /* Update my_lts_vector for each new message received  for the corresponding server */
+  if (u->lts.ts > my_vector[u->lts.pid]) {
+    my_vector[u->lts.pid] = u->lts.ts;
+    min_update_matrix[me][u->lts.pid] = u->lts.ts;
   }
   
   if (shouldLog) {
@@ -1003,6 +1003,34 @@ void try_pending_updates() {
 }
 
 
+void apply_lts_vector (int svr, unsigned int lts[MAX_SERVERS]) {
+  int             i, j;
+  unsigned int    curmin;
+
+  /* Update min LTS matrix row for given server */
+  for (i=0; i<MAX_SERVERS; i++) {
+    if (lts[i] > min_update_matrix[svr][i]) {
+      min_update_matrix[svr][i] = lts[i];
+    }
+  }
+  
+  /* Check if we can trim logs via column for each PID */
+  for (i=0; i<MAX_SERVERS; i++) {
+    curmin = MAX_INT;
+    for (j=0; j<MAX_SERVERS; j++) {
+      if (min_update_matrix[j][i] < curmin) {
+        curmin = min_update_matrix[j][i];
+      }
+    }
+    
+    /* Trim all updates for given process upto min ts */
+    if (curmin > min_update_vector[i]) {
+      min_update_vector[i] = curmin;
+      update_ll_trim(&updates, min_update_vector[i], i);
+    }
+  }
+  
+}
 
 /*------------------------------------------------------------------------------
  *  Recovery & Reconciling functions - these are used to recover from disk for
@@ -1027,24 +1055,25 @@ int recover_from_disk(update_ll *list) {
   return num_in_log;
 }
 
-void update_my_vector() {
-  int i = 0;
-  update_ll_node *curr;
-  /* Reset vector */
-  for(i = 0; i < MAX_SERVERS; i++) {
-    my_vector[i] = 0;
-  }
-
-  /* Compute vector from updates. This can be optimized */
-  /* Best solution is to search from the back until we get 1 update from each server */
-  curr = updates.first;
-  while (curr) {
-    my_vector[curr->data.lts.pid] = curr->data.lts.ts;
-    curr = curr->next;
-  }
-
-  return;
-}
+//void update_my_vector() {
+//  int i = 0;
+//  update_ll_node *curr;
+//  /* Reset vector */
+//  for(i = 0; i < MAX_SERVERS; i++) {
+//    my_vector[i] = 0;
+//  }
+//
+//  /* Compute vector from updates. This can be optimized */
+//  /* Best solution is to search from the back until we get 1 update from each server */
+//  curr = updates.first;
+//  while (curr) {
+//    my_vector[curr->data.lts.pid] = curr->data.lts.ts;
+//    min_update_matrix[me][curr->data.lts.pid] = curr->data.lts.ts;
+//    curr = curr->next;
+//  }
+//
+//  return;
+//}
 
 void resend_update (update *u) {
   Message out_msg;
@@ -1145,6 +1174,15 @@ void print_my_vector() {
    logdb("%d ", my_vector[i]);
   }
   logdb("\n");
+}
+
+void print_lts_vector(unsigned int v[MAX_SERVERS]) {
+  int i; 
+  loginfo("LTS-->  ");
+  for(i = 0; i < MAX_SERVERS; i++) {
+   loginfo("%d ", v[i]);
+  }
+  loginfo("\n");
 }
 
 void print_connected_servers () {

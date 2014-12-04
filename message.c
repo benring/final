@@ -60,7 +60,7 @@ void prepareLikeMsg (Message * m, char * user, lts_entry ref, char act, lts_entr
 
 
 /* Prepare a LTSVector Message for sending to servers */
-void prepareLTSMsg (Message *m, int from, int lts[MAX_SERVERS], int f) {
+void prepareLTSMsg (Message *m, int from, unsigned int lts[MAX_SERVERS], int f) {
   LTSVectorMessage *ltsm;  
   int i;
   m->tag = LTS_VECTOR;
