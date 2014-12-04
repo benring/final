@@ -253,7 +253,7 @@ int update_ll_trim(update_ll *list, int ts, int pid) {
   update_ll_node* next = 0;
   while(curr) { 
     /* Terminate early: */
-    if (lts_greaterthan(curr, tmp)) {
+    if (lts_greaterthan(curr->data.lts, tmp)) {
       return 0;
     }
     next = curr->next;
@@ -285,20 +285,21 @@ int update_ll_trim(update_ll *list, int ts, int pid) {
 
 update update_ll_pop(update_ll *list) {
   update result;
-  update_ll_node* curr, next;
+  update_ll_node* curr;
+  update_ll_node* next;
   
   if (update_ll_is_empty(list)) {
     printf("ERROR. CANNOT POP FROM EMPTY UPDATE LIST\n");
     exit(1);
   }
-  curr = update_ll->first;
+  curr = list->first;
   
-  update_ll->first = curr->next;
-  if (update_ll->first) {
-    update_ll->first->prev = 0; 
+  list->first = curr->next;
+  if (list->first) {
+    list->first->prev = 0; 
   }
   else {
-    update_ll->last = 0;
+    list->last = 0;
   }
 
   result = curr->data;
