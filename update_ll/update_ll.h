@@ -58,7 +58,7 @@ ELEM* update_ll_get_inorder_fromback(update_ll *list, lts_entry lts);
 /* Delete all elements in the list */
 int update_ll_clear(update_ll* list);
 
-/* Delete all elements with an lts strictly lower than lts. (assuming list is in order) */
-int update_ll_delete_upto(update_ll *list, lts_entry lts);
+/* Delete all elements with the given pid and a timestamp strictly lower than ts. (assuming list is in order) */
+int update_ll_trim(update_ll *list, int ts, int pid);
 #endif
 

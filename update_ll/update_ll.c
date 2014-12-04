@@ -240,23 +240,37 @@ int update_ll_clear(update_ll* list) {
   return 1;
 }
 
-int update_ll_delete_upto(update_ll *list, lts_entry lts) {
+int update_ll_trim(update_ll *list, int ts, int pid) {
   update_ll_node* curr = list->first;
+  if (update_ll_is_empty(list)) {
+    return -1;
+  }
 
-  while(lts_lessthan(curr->data.lts, lts)) {
-    // delete first element in list
-    list->first = curr->next;
-    free(curr);
-    
-    if(list->first) {
-      list->first->prev = 0;
+  update_ll_node* prev = 0;
+  update_ll_node* next = 0;
+  while(curr) {
+    next = curr;
+    if (curr->data.lts.pid == pid && curr->data.lts.ts < ts) {
+      /* removing head of list */
+      if (!prev) {
+        list->first = curr->next;
+      }
+      /* removing tail of list */
+      if (curr == list->last) {
+        list->last = curr->prev;
+      }
+      if (prev) {
+        prev->next = curr->next;
+      }
+      if (curr->next) {
+        curr->next->prev = prev;
+      }
+
+      free(curr);
     }
     else {
-      // List is empty now
-      list->last = 0;
+      prev = curr;
     }
-
-    curr = list->first;
+    curr = next;
   }
-  return 0;
 }
