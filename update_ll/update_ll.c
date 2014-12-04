@@ -273,4 +273,5 @@ int update_ll_trim(update_ll *list, int ts, int pid) {
     }
     curr = next;
   }
+  return 0;
 }
