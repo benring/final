@@ -60,5 +60,9 @@ int update_ll_clear(update_ll* list);
 
 /* Delete all elements with the given pid and a timestamp strictly lower than ts. (assuming list is in order) */
 int update_ll_trim(update_ll *list, int ts, int pid);
+
+/* Remove the first update in the list and return it. LIST MUST BE NON EMPTY OR ERROR */ 
+update update_ll_pop(update_ll *list);
+
 #endif
 

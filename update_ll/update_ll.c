@@ -282,3 +282,26 @@ int update_ll_trim(update_ll *list, int ts, int pid) {
   }
   return 0;
 }
+
+update update_ll_pop(update_ll *list) {
+  update result;
+  update_ll_node* curr, next;
+  
+  if (update_ll_is_empty(list)) {
+    printf("ERROR. CANNOT POP FROM EMPTY UPDATE LIST\n");
+    exit(1);
+  }
+  curr = update_ll->first;
+  
+  update_ll->first = curr->next;
+  if (update_ll->first) {
+    update_ll->first->prev = 0; 
+  }
+  else {
+    update_ll->last = 0;
+  }
+
+  result = curr->data;
+  free(curr);
+  return result; 
+}
