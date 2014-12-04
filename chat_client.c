@@ -41,15 +41,14 @@ static  mailbox 	  mbox;
 static  Message		  *out_msg;
 static  Message     in_msg;
 static	lts_entry		null_lts;
-//static  sp_time     display_delay;
-//static  sp_time     idle;
-
 
 /* User Interface vars */
 static 	char		  last_command;
 static  char      last_message[80];
 static  int       dmesg = -1;
 static  int       chat_lines_to_display = DEFAULT_LINE_DISPLAY;
+static  sp_time   display_delay;
+static  sp_time   idle;
 
 /* Forward Declare functions */
 void Initialize();
@@ -75,8 +74,8 @@ int main (int argc, char *argv[])  {
 	
 	Initialize();
 	
+  Display(SHOW_UI);
   while (state < CONN) {
-    Display(0);
     User_command();
   }
 	
@@ -97,19 +96,19 @@ void Display(int code) {
 //  now = E_get_time();
 //  E_sub_time(now, display_delay);
   
-  if (code == 1) {
-    logdb("Waiting to display\n");
+  if (code == SHOW_HELP) {
+    Print_menu();
   }
   else {
-//    system("clear");
-    loginfo("\n---------------------------------------------------------------------\n");
+    system("clear");
+    loginfo("\n=================================================================================================\n");
     if (state == RUN) {
       loginfo("ROOM:  %s\n", my_room);
       loginfo("Attendees");
       name_ll_print(&displayed_attendees);
       chat_ll_print_num(&chat_room, chat_lines_to_display);
       chat_lines_to_display = DEFAULT_LINE_DISPLAY;
-      loginfo("\n---------------------------------------------------------------------\n");
+      loginfo("\n-------------------------------------------------------------------------------------------------\n");
     }
     if (dmesg >= 0) {
         loginfo("  %s\n", last_message);
@@ -126,11 +125,13 @@ void Display(int code) {
     else {
       loginfo("  Connected to SERVER #%d\n", my_server+1);
     }
-    loginfo("---------------------------------------------------------------------\n");
+    loginfo("-------------------------------------------------------------------------------------------------\n");
   }
   loginfo("\n%s> ", &User[3]);
   dmesg = -1;
   fflush(stdout);
+  idle = E_get_time();
+
 }
 
 /*------------------------------------------------------------------------------
@@ -144,7 +145,7 @@ void process_server_message() {
   like_entry      *le;
   chat_info       *ch;
   int             i;
-  char            tmpmsg[80] = "";
+//  char            tmpmsg[80] = "";
 	
 	logdb("Received '%c' Update from server\n", in_msg.tag);
 
@@ -204,14 +205,14 @@ void process_server_message() {
       for (i=0; i<MAX_SERVERS; i++) {
         connected_server[i] = vm->connected_server[i];
       }
-      strcpy(last_message, "CONNECTED servers:  [ ");
-      for (i=0; i<MAX_SERVERS; i++) {
-        if (vm->connected_server[i]) {
-          dmesg = sprintf(tmpmsg, " <SVR %d>", i+1);
-          strcat(last_message, tmpmsg);
-        }
-      }
-      strcat(last_message, "  ]");
+//      strcpy(last_message, "CONNECTED servers:  [");
+//      for (i=0; i<MAX_SERVERS; i++) {
+//        if (vm->connected_server[i]) {
+//          dmesg = sprintf(tmpmsg, " <SVR %d>", i+1);
+//          strcat(last_message, tmpmsg);
+//        }
+//      }
+//      strcat(last_message, " ]");
       break;
       
     default:
@@ -313,7 +314,7 @@ void Read_message() {
       for (i=0; i<num_target_groups; i++) {
         if (target_groups[i][1] == 's') {
           server_alive = TRUE;
-          break;
+          return;
         }
       }
       if (!server_alive) {
@@ -348,9 +349,8 @@ void Read_message() {
     logerr("Received a BAD message\n");
   }
 
-  Display(0);
+  Display(SHOW_UI);
   fflush(stdout);
-//  idle = E_get_time();
 }
 
 
@@ -413,7 +413,7 @@ void Read_message() {
 		User[2] = '0';
 		strcpy(&User[3], arg);
 		logdb("Your username is now set to <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
-		dmesg = sprintf(last_message, "Your username is now set to '%s'", &User[3]);
+		dmesg = sprintf(last_message, "You username is now set to '%s'", &User[3]);
     
     if (state == CONN) {
       login_server(my_server + 1);  /* Log back into same server */
@@ -552,8 +552,6 @@ void Read_message() {
       dmesg = sprintf(last_message, "You cannot like your own chat.");
       break;
     }
-    logdb("Current Like list for this chat:\n");
-    like_ll_print(&(ch->likes));
     if (does_like(&(ch->likes), &User[3])) {
       dmesg = sprintf(last_message, "You cannot like a chat you already like.");
       break;
@@ -603,14 +601,14 @@ void Read_message() {
 			break;
 		}
 
-    strcpy(last_message, "CONNECTED servers:  [ ");
+    strcpy(last_message, "CONNECTED servers:  [");
     for (i=0; i<MAX_SERVERS; i++) {
       if (connected_server[i]) {
         dmesg = sprintf(tmpmsg, " <SVR %d>", i+1);
         strcat(last_message, tmpmsg);
       }
     }
-    strcat(last_message, "  ]");
+    strcat(last_message, " ]");
 		break;
 
 
@@ -633,16 +631,17 @@ void Read_message() {
 
   /* ------------- PRINT MENU --------------------------------------*/
 	case '?':
-		Print_menu();
-		break;
+    Display(SHOW_HELP);
+		return;
 	
 	default:
-		dmesg = sprintf(last_message, "Invalid command. Printing help menu.");
-		Print_menu();
+    loginfo("Invalid command. Printing help menu.\n");
+//		dmesg = sprintf(last_message, "Invalid command. Printing help menu.");
+    Display(SHOW_HELP);
+		return;
 	}
-  Display(0);
+  Display(SHOW_UI);
   fflush(stdout);
-//  idle = E_get_time();
 }
 
 /*------------------------------------------------------------------------------
@@ -680,9 +679,9 @@ void login_server (int svr)  {
   connected_server[my_server] = TRUE;
 
   logdb("Actual username is <%c%c%c%s>\n", User[0], User[1], User[2], &User[3]);
-  dmesg = sprintf(last_message, "Your username is now set to '%s'\n", &User[3]);
   logdb("My Server group is %s\n", my_server_group);
   logdb("My Server inbox is %s\n", my_server_inbox);
+  dmesg = sprintf(last_message, "You are now connected to Server #%c", server_id);
   
   state = CONN;
 }
@@ -710,8 +709,8 @@ void Initialize() {
 	null_lts.pid = 0;
 	null_lts.ts = 0;
   my_server = -1;
-//  display_delay.sec = 1;
-//  display_delay.usec = 0;
+  display_delay.sec = 1;
+  display_delay.usec = 0;
   strcpy(my_server_group, SERVER_GROUP_PREFIX);
   strcpy(my_server_inbox, SERVER_NAME_PREFIX);
   dmesg = sprintf(last_message, 
@@ -723,15 +722,14 @@ void Initialize() {
  *   Print_menu - Display help message to user
  *----------------------------------------------------------------------------*/
 void Print_menu()  {
-	loginfo("Client Help Menu \n");
+	loginfo("\nClient Help Menu \n");
 	loginfo("\t%-20s%s\n", "u <username>", "Set user name");
 	loginfo("\t%-20s%s\n", "c <server #>", "Connect to a server, valid #'s are 1-5");
-	loginfo("\t%-20s%s\n", "v", "View connected servers (must be connected to a server)");
-	loginfo("\t%-20s%s\n", "j <room>", "Join a chat room (must be connected to a server)");
-	loginfo("\t%-20s%s\n", "a <chat_text>", "Append chat text to room (must be joined to a room)");
-	loginfo("\t%-20s%s\n", "h", "Get chat room History (must be joined to a room)");
-	loginfo("\t%-20s%s\n", "l <chat #>", "Like a chat text (must be joined to a room)");
-	loginfo("\t%-20s%s\n", "r <chat #>", "Remove a Like (must be joined to a room & have previously likes that chat text)");
-	loginfo("\t%-20s%s\n\n\n", "q", "Quit");
-
+	loginfo("\t%-20s%s\n", "v", "View connected servers");
+	loginfo("\t%-20s%s\n", "j <room>", "Join a chat room");
+	loginfo("\t%-20s%s\n", "a <chat_text>", "Append chat text to room");
+	loginfo("\t%-20s%s\n", "h", "Get chat room History");
+	loginfo("\t%-20s%s\n", "l <chat #>", "Like a chat text");
+	loginfo("\t%-20s%s\n", "r <chat #>", "Remove a Like");
+	loginfo("\t%-20s%s\n\n", "q", "Quit");
 }

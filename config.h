@@ -34,6 +34,10 @@
 #define ADD_LIKE 'L'
 #define REM_LIKE 'R'
 
+/* Interface (for display) */
+#define SHOW_UI 0
+#define SHOW_HELP 1
+#define NO_REFRESH -1
 
 //#define	DEBUG 1
 #ifdef  DEBUG

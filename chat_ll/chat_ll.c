@@ -33,7 +33,7 @@ void chat_ll_print(chat_ll* list) {
   int   index = 1;
 
   if (chat_ll_is_empty(list)) {
-    printf("Empty List\n");
+    printf("\n      {No chat messages to display}\n");
   }
   else {
     chat_ll_node* curr = list->first;
@@ -51,7 +51,7 @@ void chat_ll_print_num(chat_ll* list, int num) {
   int count = 0;
 
   if (chat_ll_is_empty(list)) {
-    printf("Empty List\n");
+    printf("\n      {No chat messages to display}\n");
   }
   else {
     if (num == -1) {

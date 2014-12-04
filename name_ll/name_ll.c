@@ -37,7 +37,7 @@ void name_ll_print(name_ll* list)
     printf("Empty List\n");
   } else {
     name_ll_node* curr = list->first;
-    printf(" List [%d]: ", list->size);
+    printf(" [%d]: ", list->size);
     while (curr) {
       printf(" %s", curr->data);
       curr = curr->next;
