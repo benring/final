@@ -85,7 +85,6 @@ void 		Initialize (char * server_index);
 
 /*  High level event handlers in response to client/server action */
 void    handle_server_update();
-void    handle_lts_vector();
 void    handle_server_change(int num_members, 
                           char members[MAX_CLIENTS][MAX_GROUP_NAME]);
 void    handle_client_command(char client[MAX_GROUP_NAME]);
@@ -107,8 +106,12 @@ void    try_pending_updates();
 
 /*  Functions to manage reconciling & recovery for fault tolerance */
 int     recover_from_disk(update_ll *list);
-void    resend_update (update *u, int recv_svr[MAX_SERVERS]);
+void    resend_update (update *u);
 void    update_my_vector();
+void    Initialize_Reconcile_Data();
+void    Handle_lts_vector();
+void    Determine_updates_to_send();
+void    Send_updates();
 
 /*  Other functions for server operations */
 void    send_history_to_client(char *roomname, char *client);
@@ -218,50 +221,51 @@ void	Read_message()   {
   }
 
   /*  Processes Message */
-  if (Is_regular_mess(service_type))	{
+  if (Is_regular_mess(service_type))
+  {
     if (sender[1] == 's') {
       name = strtok(sender, HASHTAG);
-	if (strcmp(name, my_inbox) != 0) {
-          logdb("  Server Update message. Contents -->: %s\n", (char *) &mess);
-          if (mess.tag == LTS_VECTOR) {
-            handle_lts_vector();   
-          }
-          else {
-	    handle_server_update();
-          }
-	}
-    }
+      if (strcmp(name, my_inbox) != 0) {
+        logdb("  Server Update message. Contents -->: %s\n", (char *) &mess);
+        if (mess.tag == LTS_VECTOR) {
+          Handle_lts_vector();
+        } 
+        else {
+          handle_server_update();
+        }
+      }
+    } 
     else {
       logdb("  Regular Client Upate Message. Contents -->: %s\n", (char *) &mess);
       handle_client_command(sender);
     }
   }
   /* Process Group membership messages */
-  else if(Is_membership_mess(service_type)) {
-    
+  else if(Is_membership_mess(service_type))
+  {
+  
     if (Is_transition_mess( service_type ))  {
       logdb(" Ignoring TRANSITIONAL message on group: %s\n", sender);
       return;
     }
     name = strtok(sender, HASHTAG);
-
+  
     if (strcmp(sender, all_server_group) == 0) {
       handle_server_change(num_target_groups, target_groups);
-    }
-    else if (strcmp(sender, my_client_group) == 0) {
+    } else if (strcmp(sender, my_client_group) == 0) {
       handle_client_change(num_target_groups, target_groups);
-    }
-    else {
+    } else {
       logdb ("Group change on <%s>\n", sender);
     }
   }
-
+  
   /* Bad message */
-  else {
+  else
+  {
     logdb("Received a BAD message\n");
   }
-
-}
+  
+  }
 
 /*------------------------------------------------------------------------------
  *   Inialize -- conduct program intiation
@@ -390,7 +394,6 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
 
 void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   Message out_msg;
-  LTSVectorMessage *ltsm;
 
   /* Re-compute the connected server list */
   int new_connected_svr[MAX_SERVERS];
@@ -438,6 +441,10 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     if (connected_svr[i]) {
       sum++;
     }
+    else {
+      /* Always reset expected vectors to 0 for non-connected servers  */
+      expected_vectors[i] = 0;
+    }
 
   }
   if (new_members && sum > 1) {
@@ -445,59 +452,136 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     loginfo("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
     update_my_vector();
 
-    /* Expect an additional vector from each server */
-    for (i=0; i < MAX_SERVERS; i++) {
-      if (connected_svr[i]) {
-        expected_vectors[i]++;
-      }
-      max_lts_vector[i].pid = 10;
-      min_lts_vector[i].pid = 10;
-      max_lts_vector[i].ts = 0;
-      min_lts_vector[i].ts = MAX_INT;
-    }
-    logdb("New Expected Vector is: \n");
-    for (i=0; i < MAX_SERVERS; i++) {
-      logdb (" %d", expected_vectors[i]);
-    }
-    
-    /* Send out my vector */
-    out_msg.tag = LTS_VECTOR;
-    ltsm = (LTSVectorMessage *) &(out_msg.payload);
-    ltsm->sender = me; 
-    for (i = 0; i < MAX_SERVERS; i++) {
-      ltsm->lts[i] = my_vector[i]; 
-    }
+    Initialize_Reconcile_Data();
 
-    /* Handle my own vector since it wont be received */
-    expected_vectors[me]--;
-    logdb("Decremented myself: \n");
-    for (i=0; i < MAX_SERVERS; i++) {
-      logdb (" %d", expected_vectors[i]);
-    }
-    
-    for (i=0; i < MAX_SERVERS; i++) { 
-      lts_entry my_entry;
-      my_entry.ts = my_vector[1];
-      my_entry.pid = me;
-      if (lts_lessthan(my_entry, min_lts_vector[i])) {
-        min_lts_vector[i].ts = my_vector[i];
-        min_lts_vector[i].pid = me;
-      }
-
-      if (max_lts_vector[i].ts == 0 || lts_greaterthan(my_entry, max_lts_vector[i])) {
-        max_lts_vector[i].ts = my_vector[i];
-        max_lts_vector[i].pid = me;
-      }
-    }
-      
-    send_message(mbox, all_server_group, &out_msg);
   }
 }
 
-void handle_lts_vector() {
+void Initialize_Reconcile_Data () {
+  int i;
+  Message out_msg;
+  lts_entry my_entry;
   LTSVectorMessage  *ltsm;
+  
+  /*  1a. Initialize Reconcile Data variables */
+  for (i=0; i < MAX_SERVERS; i++) {
+    max_lts_vector[i].pid = MAX_SERVERS+1;
+    min_lts_vector[i].pid = MAX_SERVERS+1;
+    max_lts_vector[i].ts = 0;
+    min_lts_vector[i].ts = MAX_INT;
+    my_responsibility[i] = 0;
+    /* Expect an additional vector from each server */
+    if (connected_svr[i]) {
+      expected_vectors[i]++;
+    }
+  }
+
+  logdb("New Expected Vector is: \n");
+  for (i=0; i < MAX_SERVERS; i++) {
+    logdb (" %d", expected_vectors[i]);
+  }
+  
+  /* 1b. PREPARE: My_LTS_Vector */
+  out_msg.tag = LTS_VECTOR;
+  ltsm = (LTSVectorMessage *) &(out_msg.payload);
+  ltsm->sender = me; 
+  ltsm->flag = LTS_RECONCILE;
+  for (i = 0; i < MAX_SERVERS; i++) {
+    ltsm->lts[i] = my_vector[i]; 
+  }
+
+  /* 1c. Handle my own vector since it wont be received */
+  expected_vectors[me]--;
+  logdb("Decremented myself: \n");
+  for (i=0; i < MAX_SERVERS; i++) {
+    logdb (" %d", expected_vectors[i]);
+  }
+  
+  /* 1d. Process our MY_LTS_Vector as a received vector */
+  for (i=0; i < MAX_SERVERS; i++) { 
+    my_entry.ts = my_vector[i];
+    my_entry.pid = me;
+    if (lts_lessthan(my_entry, min_lts_vector[i])) {
+      min_lts_vector[i].ts = my_vector[i];
+      min_lts_vector[i].pid = me;
+    }
+
+    if (max_lts_vector[i].ts == 0 || lts_greaterthan(my_entry, max_lts_vector[i])) {
+      max_lts_vector[i].ts = my_vector[i];
+      max_lts_vector[i].pid = me;
+    }
+  }
+    
+  /* 1e. SEND: MY_LTS_VECTOR  */
+  send_message(mbox, all_server_group, &out_msg);
+}
+
+void Determine_updates_to_send() {
+  lts_entry my_entry;
+  int i;
+  
+  logdb("Received all vectors: Calculating updates to send: \n"); 
+  my_entry.pid = me;
+  
+  /* Determine which updates this server is responsible for */ 
+  for (i = 0; i < MAX_SERVERS; i++) {
+    my_entry.ts = my_vector[i];
+   
+    /* Server is always responsible for its own updates */
+    if (i == me && max_lts_vector[i].ts != 0) {
+      my_responsibility[i] = TRUE;
+    }
+
+    /* If a server is not connected, we may be responsible for its updates */
+    /* Provided that maximum LTS matches my_entry */
+    /* The pid guarantees only 1 server will resend */
+    if (max_lts_vector[i].ts != 0 && !connected_svr[i] && lts_eq(my_entry, max_lts_vector[i])) { 
+      my_responsibility[i] = TRUE;
+    }
+  }
+
+  loginfo("Received all Vectors: Min/Max:\n");
+  /* Log the Min/Max receieved for each server */
+  for (i = 0; i < MAX_SERVERS; i++) {
+     loginfo ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
+  }
+
+  /* Log updates that this server is responsible for */
+  for (i = 0; i < MAX_SERVERS; i++) {
+    if(my_responsibility[i]) {
+      loginfo("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
+    }
+  }
+  
+}
+
+void Send_updates() {
+  // TODO flow control?
   update_ll_node    *curr_update;
-  int               send_svr_update[MAX_SERVERS];
+
+  int currpid;
+  int currts;
+
+  curr_update = updates.first;
+
+  while(curr_update) {
+    currpid = curr_update->data.lts.pid;
+    currts = curr_update->data.lts.ts;
+    
+    if (my_responsibility[currpid]) {
+      if(currts <= max_lts_vector[currpid].ts && currts >= min_lts_vector[currpid].ts) {
+        logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
+        resend_update(&(curr_update->data));
+      }
+    }
+    curr_update = curr_update->next;
+  }
+  
+
+}
+
+void Handle_lts_vector() {
+  LTSVectorMessage  *ltsm;
   int               sum = 0;
   int               i;
  
@@ -506,11 +590,11 @@ void handle_lts_vector() {
     logerr("ERROR received vector when not in reconcile state\n");
   }
  
-  /* Interpret Contents of message */
+  /* 2a. RECV: LTS Vector & Interpret Contents of message */
   ltsm = (LTSVectorMessage *) mess.payload;
   logdb(" RECEIVED AN LTS VECTOR FROM %d\n", ltsm->sender);
  
-  /* Decrement the expected_vector count for the sender, log new expected_vectors */
+  /* 2b. Decrement the expected_vector count for the sender */
   expected_vectors[ltsm->sender]--;
   logdb("New Expected Vector is: \n");
   for (i=0; i < MAX_SERVERS; i++) {
@@ -518,14 +602,13 @@ void handle_lts_vector() {
   }
   logdb("\n");
 
-  /* Update the min and max lts_vectors if this message contains a new min or max */
-  /* While simultaneously counting how many vectors are still expected */
+  /* 2c. Update the min and max lts_vectors if this message contains a new min or max 
+         While simultaneously counting how many vectors are still expected */
   lts_entry new_entry;
   sum = 0;
   for(i=0; i < MAX_SERVERS; i++) {
     /* Count expected vectors, reset my_responsibility vector */ 
     sum += expected_vectors[i];
-    my_responsibility[i] = 0;
    
     /* Create a new lts with the sender as the pid */
     /* We store both (ts, pid) when tracking the maximum. */
@@ -541,61 +624,17 @@ void handle_lts_vector() {
     }
   }
 
-  /* If we have received all expected vectors, figure out which updates to resend, then resend them */
+  /* If we have received all expected vectors, 
+   *    figure out which updates to resend, then resend them */
   if (sum == 0) {
-    logdb("Received all vectors: Calculating updates to send: \n"); 
-    lts_entry my_entry;
-    my_entry.pid = me;
     
-    /* Determine which updates this server is responsible for */ 
-    for (i = 0; i < MAX_SERVERS; i++) {
-      my_entry.ts = my_vector[i];
-     
-      /* Server is always responsible for its own updates */
-      if (i == me && max_lts_vector[i].ts != 0) {
-        my_responsibility[i] = TRUE;
-      }
-
-      /* If a server is not connected, we may be responsible for its updates */
-      /* Provided that maximum LTS matches my_entry */
-      /* The pid guarantees only 1 server will resend */
-      if (max_lts_vector[i].ts != 0 && !connected_svr[i] && lts_eq(my_entry, max_lts_vector[i])) { 
-        my_responsibility[i] = TRUE;
-      }
-    }
-
-    loginfo("Received all Vectors: Min/Max:\n");
-    /* Log the Min/Max receieved for each server */
-    for (i = 0; i < MAX_SERVERS; i++) {
-       loginfo ("Server %d. Min: %d. Max: %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
-    }
-
-    /* Log updates that this server is responsible for */
-    for (i = 0; i < MAX_SERVERS; i++) {
-      if(my_responsibility[i]) {
-        loginfo("I am responsible for Server %d's updates. %d to %d\n", i, min_lts_vector[i].ts, max_lts_vector[i].ts);
-      }
-    }
-
-    /* Resend updates */ 
-    // TODO flow control?
-    curr_update = updates.first;
-    int currpid;
-    int currts;
-
-    while(curr_update) {
-      currpid = curr_update->data.lts.pid;
-      currts = curr_update->data.lts.ts;
-      
-      if (my_responsibility[currpid]) {
-        if(currts <= max_lts_vector[currpid].ts && currts >= min_lts_vector[currpid].ts) {
-          logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
-          resend_update(&(curr_update->data), send_svr_update);
-        }
-      }
-      curr_update = curr_update->next;
-    }
-    
+    /*  3. Determine if server needs to send updates */
+    Determine_updates_to_send();
+  
+    /*  4. Attempt to send updates & return to RUN state */
+    // DO FLOW CONTROL HERE
+    Send_updates();
+  
     /* Finished RECONCILE state */ 
     loginfo("[TRANSITION] Done with RECONCILE. Entering RUN state.\n");
     my_state = RUN;
@@ -983,7 +1022,7 @@ void update_my_vector() {
   return;
 }
 
-void resend_update (update *u, int recv_svr[MAX_SERVERS]) {
+void resend_update (update *u) {
   Message out_msg;
   chat_entry  *ce;
   like_entry  *le;

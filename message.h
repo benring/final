@@ -19,6 +19,8 @@
 #define JOIN_MSG 'J'
 #define VIEW_MSG 'V'
 #define LIKE_MSG 'L'
+#define LTS_RECONCILE 0
+#define LTS_PERIODIC 1
 
 /*  Message Sizes  */
 #define MAX_MESSAGE_SIZE 1024
@@ -59,6 +61,7 @@ typedef struct ViewMessage {
 
 typedef struct LTSVectorMessage {
   unsigned  int sender;
+  int           flag;
 	unsigned  int lts[MAX_SERVERS];
 } LTSVectorMessage;
 
