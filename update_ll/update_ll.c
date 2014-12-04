@@ -239,3 +239,39 @@ int update_ll_clear(update_ll* list) {
   list->last = 0;
   return 1;
 }
+
+int update_ll_trim(update_ll *list, int ts, int pid) {
+  update_ll_node* curr = list->first;
+  if (update_ll_is_empty(list)) {
+    return -1;
+  }
+
+  update_ll_node* prev = 0;
+  update_ll_node* next = 0;
+  while(curr) {
+    next = curr;
+    if (curr->data.lts.pid == pid && curr->data.lts.ts < ts) {
+      /* removing head of list */
+      if (!prev) {
+        list->first = curr->next;
+      }
+      /* removing tail of list */
+      if (curr == list->last) {
+        list->last = curr->prev;
+      }
+      if (prev) {
+        prev->next = curr->next;
+      }
+      if (curr->next) {
+        curr->next->prev = prev;
+      }
+
+      free(curr);
+    }
+    else {
+      prev = curr;
+    }
+    curr = next;
+  }
+  return 0;
+}

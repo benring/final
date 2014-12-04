@@ -55,6 +55,10 @@ ELEM* update_ll_get_inorder(update_ll *list, lts_entry lts);
 /* Search an ordered list for an lts from the back, terminates early  (assuming list is in order) */
 ELEM* update_ll_get_inorder_fromback(update_ll *list, lts_entry lts);
 
+/* Delete all elements in the list */
 int update_ll_clear(update_ll* list);
+
+/* Delete all elements with the given pid and a timestamp strictly lower than ts. (assuming list is in order) */
+int update_ll_trim(update_ll *list, int ts, int pid);
 #endif
 
