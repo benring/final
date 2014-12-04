@@ -185,6 +185,7 @@ void process_server_message() {
       /*  Create a new like entry */
       le = malloc(sizeof(like_entry));
       strcpy(le->user, lm->user);
+      strcpy(le->room, lm->room);
       le->lts.pid = lm->lts.pid;
       le->lts.ts = lm->lts.ts;
       le->action = lm->action;
@@ -193,7 +194,7 @@ void process_server_message() {
       
       /* Get the referenced chat from the room & update its like list */
       ch = chat_ll_get_inorder(&chat_room, lm->ref);
-      like_ll_update_like(&(ch->likes), le->user, le->lts, le->action); 
+      like_ll_update_like(&(ch->likes), le->user, le->room, le->lts, le->action); 
     
       break;
 
@@ -205,14 +206,6 @@ void process_server_message() {
       for (i=0; i<MAX_SERVERS; i++) {
         connected_server[i] = vm->connected_server[i];
       }
-//      strcpy(last_message, "CONNECTED servers:  [");
-//      for (i=0; i<MAX_SERVERS; i++) {
-//        if (vm->connected_server[i]) {
-//          dmesg = sprintf(tmpmsg, " <SVR %d>", i+1);
-//          strcat(last_message, tmpmsg);
-//        }
-//      }
-//      strcat(last_message, " ]");
       break;
       
     default:
@@ -557,7 +550,7 @@ void Read_message() {
       break;
     }
     
-		prepareLikeMsg(out_msg, &User[3], ref, ADD_LIKE, null_lts);
+		prepareLikeMsg(out_msg, &User[3], my_room, ref, ADD_LIKE, null_lts);
 		send_message(mbox, my_server_inbox, out_msg);
 		break;
 
@@ -588,7 +581,7 @@ void Read_message() {
       break;
     }
     
-		prepareLikeMsg(out_msg, &User[3], ref, REM_LIKE, null_lts);
+		prepareLikeMsg(out_msg, &User[3], my_room, ref, REM_LIKE, null_lts);
 		send_message(mbox, my_server_inbox, out_msg);
 		break;
 

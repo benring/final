@@ -288,7 +288,7 @@ int like_ll_count_likes(like_ll *list) {
   return count;
 }
 
-int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char action) {
+int like_ll_update_like(like_ll *like_list, char* user, char* room, lts_entry like_lts, char action) {
   like_entry *old_like;
   like_entry new_like;
 
@@ -308,6 +308,7 @@ int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char
     logdb("New like occured at LTS (%d, %d)\n", like_lts.ts, like_lts.pid);
     
     strcpy(new_like.user, user);  
+    strcpy(new_like.room, room);  
     new_like.action = action;
     new_like.lts = like_lts;
 

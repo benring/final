@@ -286,7 +286,6 @@ int update_ll_trim(update_ll *list, int ts, int pid) {
 update update_ll_pop(update_ll *list) {
   update result;
   update_ll_node* curr;
-  update_ll_node* next;
   
   if (update_ll_is_empty(list)) {
     printf("ERROR. CANNOT POP FROM EMPTY UPDATE LIST\n");

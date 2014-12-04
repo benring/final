@@ -44,13 +44,14 @@ void prepareAppendMsg (Message * m, char * roomname, char * user, char * text, l
 }
 
 /* Prepare a Like Message for a user liking/removing like entry for a chat */
-void prepareLikeMsg (Message * m, char * user, lts_entry ref, char act, lts_entry lts) {
+void prepareLikeMsg (Message * m, char * user, char * roomname, lts_entry ref, char act, lts_entry lts) {
 	LikeMessage *lm;
 	logdb("Preparing Like Msg:  user: <%s>, action: <%c>, LTS: %d,%d\n", 
 			user, act, ref.ts, ref.pid);
 	m->tag = LIKE_MSG;
 	lm = (LikeMessage *) &(m->payload);
 	strcpy(lm->user, user);
+	strcpy(lm->room, roomname);
 	lm->ref.ts = ref.ts;
 	lm->ref.pid = ref.pid;
 	lm->action = act;

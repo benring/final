@@ -75,5 +75,5 @@ int does_like (like_ll *list, char * name);
 /* Insertion function utilized in the chat program ensuring updated, consisten
  *    LIKE information where only the most latest processed LIKE entry (by LTS)
  *    is retained in the list */
-int like_ll_update_like(like_ll *like_list, char* user, lts_entry like_lts, char action);
+int like_ll_update_like(like_ll *like_list, char* user, char* room, lts_entry like_lts, char action);
 #endif

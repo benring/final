@@ -50,6 +50,7 @@ typedef struct AppendMessage {
 
 typedef struct LikeMessage {
 	char		user[NAME_LEN];
+  char    room[NAME_LEN];
 	lts_entry	ref;
 	char		action;
 	lts_entry	lts;
@@ -74,7 +75,7 @@ void prepareAppendMsg (Message * m, char * roomname,
                        char * user, char * text, lts_entry lts);
 
 /* Prepare a Like Message for a user liking/removing like entry for a chat */
-void prepareLikeMsg (Message * m, char * user, 
+void prepareLikeMsg (Message * m, char * user, char * roomname,
                      lts_entry ref, char act, lts_entry lts);
 
 /* Prepare a View Message for sending connected servers in network view  */

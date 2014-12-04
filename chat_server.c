@@ -25,7 +25,8 @@
 #define UNHANDLED_UPDATE 2
 #define PENDING_UPDATE 3
 #define SUCCESSFUL_UPDATE 4
-#define ALL_all_server_group "server-all"
+
+#define HOLD_SEND_FLOW 1
 
 
 /*===========================================================================
@@ -87,6 +88,7 @@ static  lts_entry            max_lts_vector[MAX_SERVERS];
 void		Read_message();
 void    Except();
 void 		Initialize (char * server_index);
+void    Resend_updates();
 
 /*  High level event handlers in response to client/server action */
 void    handle_server_update();
@@ -104,8 +106,8 @@ int     log_update(update *u);
 /*  Functions to build global state from updates*/
 int     apply_update (update * u, int shouldLog, int send_clients);
 int     apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients);
-int     apply_like_update(lts_entry ref, lts_entry like_lts, 
-                              char* user, char action, int send_clients);
+int     apply_like_update(lts_entry ref, lts_entry like_lts, char * user,
+                              char* room, char action, int send_clients);
 int     incorporate_into_state(update *u, int send_clients);
 void    try_pending_updates();
 void    apply_lts_vector (int svr, unsigned int lts[MAX_SERVERS]);
@@ -358,13 +360,15 @@ void Except()  {
 
 
 /*------------------------------------------------------------------------------
- *   Except -- event handler for respond to Spread exceptions
+ *   Resend_updates -- event handler for respond to resend update; this 
+ *      helps manage flow control when a server needs to resend a lot of
+ *      updates at once
  *----------------------------------------------------------------------------*/
 void Resend_updates()  {
   update u;
   
   if (flow_control < HOLD_SEND_FLOW && !update_ll_is_empty(&resend_queue))  {
-    u = update_ll_pop(&resend_updates);
+    u = update_ll_pop(&resend_queue);
     send_single_update(&u);
   }
 }
@@ -412,7 +416,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       
       build_likeEntry(lm->user, lm->ref, lm->action);
       apply_update(out_update, TRUE, TRUE);
-      prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
+      prepareLikeMsg(&out_msg, lm->user, lm->room, lm->ref, lm->action, out_update->lts);
       send_message(mbox, all_server_group, &out_msg);
       flow_control++;
       break;
@@ -582,7 +586,7 @@ void Send_updates() {
       if(currts <= max_lts_vector[currpid].ts && currts >= min_lts_vector[currpid].ts) {
         logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
 //        send_single_update(&(curr_update->data));
-        update_ll_insert_inorder(&resend_updates, curr_update->data);
+        update_ll_insert_inorder(&resend_queue, curr_update->data);
       }
     }
     curr_update = curr_update->next;
@@ -694,6 +698,7 @@ void handle_server_update() {
 
       le = (like_entry *) &(new_update.entry);
       strcpy(le->user, lm->user);
+      strcpy(le->room, lm->room);
       le->action = lm->action;
       le->lts = lm->ref;
 
@@ -925,32 +930,21 @@ int apply_chat_update (chat_entry * ce, lts_entry * ts, int send_clients) {
   return SUCCESSFUL_UPDATE;
 }
 
-int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action, int send_clients) {
+int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char * room, char action, int send_clients) {
   Message   out_msg;
-  update      *mu;
-  chat_entry  *ce;
   room_info   *rm;
   chat_ll     *chat_list;
   chat_info   *ch;
   like_ll     *like_list;
   
-  /* Grab the original chat update referenced by the like */
-  logdb("Getting room for LTS Ref (%d, %d)\n", ref.ts, ref.pid);
-  mu = update_ll_get_inorder(&updates, ref);
-  if (mu == NULL) {
-    logdb("Update does not exist locally.\n");
-    // TODO this may happen after a partition
-    return PENDING_UPDATE;
-  }
-  if (mu->tag != CHAT) {
-    logerr("ERROR! Reference to non-chat update\n");
-    return UNHANDLED_UPDATE;
+
+  /* Get the room associated with the chat being liked */
+  rm = room_ll_get(&rooms, room);
+  if (!rm) {
+    logerr("ERROR! Room does not exist\n");
+    return UNHANDLED_UPDATE; 
   }
 
-  /* Determine the room associated with the chat being liked */
-  ce = (chat_entry *) &(mu->entry);
-  rm = room_ll_get(&rooms, ce->room);
-  
   /* Grab the list of chats for the room */ 
   chat_list = &(rm->chats);
   if (!chat_list) {
@@ -959,13 +953,18 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char action
   }
 
   /* Grab the chat_info and update its like list */
-  ch = chat_ll_get_inorder_fromback(chat_list, mu->lts);
+  ch = chat_ll_get_inorder_fromback(chat_list, ref);
+  if (!ch) {
+    logdb("Chat does not exist locally.\n");
+    return PENDING_UPDATE;
+  }
+  
   like_list = &(ch->likes);
-  like_ll_update_like(like_list, user, like_lts, action);
+  like_ll_update_like(like_list, user, room, like_lts, action);
   
   /* Send a message to the distro group for this room */ 
   if (send_clients)  {
-    prepareLikeMsg(&out_msg, user, ref, action, like_lts);
+    prepareLikeMsg(&out_msg, user, room, ref, action, like_lts);
     send_message(mbox, rm->distro_group,&out_msg);
   }
   return SUCCESSFUL_UPDATE;
@@ -985,7 +984,7 @@ int incorporate_into_state(update *u, int send_clients) {
 			
     case LIKE:
       le = (like_entry *) &(u->entry);
-      result = apply_like_update(le->lts, u->lts, le->user, le->action, send_clients);
+      result = apply_like_update(le->lts, u->lts, le->user, le->room, le->action, send_clients);
       break;
 		
     default:
@@ -1091,7 +1090,7 @@ void send_single_update (update *u) {
       le = (like_entry *) &(u->entry);
       logdb("Resending like msg: '%s'  did a %c-LIKE on chat-LTS (%d, %d)\n", 
         le->user, le->action, le->lts.ts, le->lts.pid);
-      prepareLikeMsg(&out_msg, le->user, le->lts, le->action, u->lts);
+      prepareLikeMsg(&out_msg, le->user, le->room, le->lts, le->action, u->lts);
       
       break;
 		
@@ -1132,7 +1131,7 @@ void send_history_to_client(char *roomname, char *client) {
     curr_like_node = likes->first;
     while(curr_like_node) {
       like = &(curr_like_node->data);
-      prepareLikeMsg(&out_msg, like->user, chat->lts, like->action, like->lts);
+      prepareLikeMsg(&out_msg, like->user, like->room, chat->lts, like->action, like->lts);
       send_message(mbox, client, &out_msg);
       curr_like_node = curr_like_node->next;
     }
