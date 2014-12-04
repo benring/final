@@ -249,7 +249,7 @@ int update_ll_trim(update_ll *list, int ts, int pid) {
   update_ll_node* prev = 0;
   update_ll_node* next = 0;
   while(curr) {
-    next = curr;
+    next = curr->next;
     if (curr->data.lts.pid == pid && curr->data.lts.ts < ts) {
       /* removing head of list */
       if (!prev) {
