@@ -242,13 +242,20 @@ int update_ll_clear(update_ll* list) {
 
 int update_ll_trim(update_ll *list, int ts, int pid) {
   update_ll_node* curr = list->first;
+  lts_entry tmp;
+  tmp.ts = ts;
+  tmp.pid = pid;
   if (update_ll_is_empty(list)) {
     return -1;
   }
 
   update_ll_node* prev = 0;
   update_ll_node* next = 0;
-  while(curr) {
+  while(curr) { 
+    /* Terminate early: */
+    if (lts_greaterthan(curr, tmp)) {
+      return 0;
+    }
     next = curr->next;
     if (curr->data.lts.pid == pid && curr->data.lts.ts < ts) {
       /* removing head of list */
