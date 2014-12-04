@@ -688,7 +688,7 @@ void handle_server_update() {
       /*  Recv: periodic LTS Vector, should only process if in run state */
       else if (my_state == RUN && ltsm->flag == LTS_PERIODIC) {
         
-        loginfo("Received periodic LTS Vector from %s\n", ltsm->sender);
+        loginfo("Received periodic LTS Vector from %d\n", ltsm->sender);
         
         /* Check min LTS and trim unnecessary Updates from global state log */
         
@@ -706,7 +706,7 @@ void handle_server_update() {
         /* Ignoring LTS messages which could skew reconcile logic */
         loginfo("  Ignoring extraneous LTS Vector message \n");
       }
-
+      break;
 
     default:
       logerr("ERROR! Received a non-update from server\n");
