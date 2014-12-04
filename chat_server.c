@@ -39,6 +39,7 @@ static	unsigned int		lts;
 static  room_ll				  rooms;
 static	update_ll			  updates;
 static  update_ll       *pending_updates;
+static  int             min_update[MAX_SERVERS];
 static  client_ll       connected_clients;
 static  int             num_connected_clients = 0;
 
@@ -52,13 +53,10 @@ static  Message			mess;
 /* Spread & server name vars   */
 static 	unsigned int		me;               /* Indexed from 0 */
 static  char    		    my_server_id;     /* Displayed index name (1-5) */
-
 /* Spread group to which ONLY this server joins so clients can send messages */
 static  char				    my_inbox[MAX_GROUP_NAME];         
-
 /* Spread group for all servers */
 static	char				    all_server_group[MAX_GROUP_NAME];   
-
 /* Spread group for all connected clients to track membership */
 static	char				    my_client_group[MAX_GROUP_NAME];    
 
@@ -66,6 +64,9 @@ static	char				    my_client_group[MAX_GROUP_NAME];
 static	update				       *out_update;
 static  FILE                 *logfile;
 static  char                 logfilename[NAME_LEN];
+
+static  sp_time             idle;
+static  sp_time             periodic_delay;
 
 /* Reconciliation vars */
 static  unsigned int         my_vector[MAX_SERVERS];
@@ -168,7 +169,8 @@ int main (int argc, char *argv[])  {
 
   loginfo("[TRANSITION] Entering RUN state. Attach handlers and start processing messages.\n");
   my_state = RUN;
-
+  idle = E_get_time();
+  
   /* Initiate Spread system event handling loop */
   E_init();
   E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY );
@@ -190,12 +192,14 @@ int main (int argc, char *argv[])  {
 void	Read_message()   {
   char		sender[MAX_GROUP_NAME];
   char		target_groups[MAX_CLIENTS][MAX_GROUP_NAME];
-  int	        num_target_groups;
-  int	        service_type;
+  int	    num_target_groups;
+  int	    service_type;
   int16		mess_type;
-  int		endian_mismatch;
-  int		ret;
+  int		  endian_mismatch;
+  int		  ret;
   char		*name;
+  Message  out_msg;
+  sp_time now;
 
   service_type = 0;
 
@@ -227,17 +231,21 @@ void	Read_message()   {
       name = strtok(sender, HASHTAG);
       if (strcmp(name, my_inbox) != 0) {
         logdb("  Server Update message. Contents -->: %s\n", (char *) &mess);
-        if (mess.tag == LTS_VECTOR) {
-          Handle_lts_vector();
-        } 
-        else {
-          handle_server_update();
-        }
+        
+        handle_server_update();
       }
     } 
     else {
       logdb("  Regular Client Upate Message. Contents -->: %s\n", (char *) &mess);
       handle_client_command(sender);
+    }
+
+    /* Check idle time & determine if a periodic LTS Vector should be sent */
+    now = E_sub_time(E_get_time(), periodic_delay);
+    if (E_compare_time(now, idle) >= 0) {
+        prepareLTSMsg (&out_msg, me, my_vector, LTS_PERIODIC);
+        send_message(mbox, all_server_group, &out_msg);
+        idle = E_get_time();
     }
   }
   /* Process Group membership messages */
@@ -265,7 +273,7 @@ void	Read_message()   {
     logdb("Received a BAD message\n");
   }
   
-  }
+}
 
 /*------------------------------------------------------------------------------
  *   Inialize -- conduct program intiation
@@ -303,11 +311,11 @@ void Initialize (char * server_index) {
   for (i=0; i<MAX_SERVERS; i++) {
     connected_svr[i] = FALSE;
     expected_vectors[i] = 0;
-    min_lts_vector[i].pid = 10;
-    max_lts_vector[i].pid = 10;
-    // TODO use MAXINT
+    min_lts_vector[i].pid = MAX_SERVERS+1;
+    max_lts_vector[i].pid = MAX_SERVERS+1;
     min_lts_vector[i].ts = MAX_INT;
     max_lts_vector[i].ts = 0;
+    min_update[i] = MAX_INT;
   }
   
   /* Do other program initialization */
@@ -316,6 +324,9 @@ void Initialize (char * server_index) {
   updates = update_ll_create();
   connected_clients = client_ll_create();
   lts = 0;
+  
+  periodic_delay.sec = 4;
+  periodic_delay.usec = 0;
 
   out_update = malloc (sizeof(update));
   out_update->lts.pid = me;
@@ -398,7 +409,6 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   /* Re-compute the connected server list */
   int new_connected_svr[MAX_SERVERS];
   int i;
-  int joined;
   int new_members = FALSE;
   for (i=0; i<MAX_SERVERS; i++) {
     new_connected_svr[i] = FALSE;
@@ -414,16 +424,12 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   for (i=0; i<MAX_SERVERS; i++) {
     int diff = new_connected_svr[i] - connected_svr[i];
     if (diff != 0) {
-      joined = FALSE;
-      if (diff == 1) {
-        joined = TRUE;
-        new_members = TRUE;
-      }
-      char* status_change_msg = (joined) ? "JOINED" : "LEFT";
-      logdb("  Server %d has %s the server-group \n", i+1, status_change_msg);
-
       /* Update */
       connected_svr[i] = new_connected_svr[i];
+
+      if (diff == 1) {
+        new_members = TRUE;
+      }
     }
   }
 
@@ -475,29 +481,10 @@ void Initialize_Reconcile_Data () {
       expected_vectors[i]++;
     }
   }
-
-  logdb("New Expected Vector is: \n");
-  for (i=0; i < MAX_SERVERS; i++) {
-    logdb (" %d", expected_vectors[i]);
-  }
   
-  /* 1b. PREPARE: My_LTS_Vector */
-  out_msg.tag = LTS_VECTOR;
-  ltsm = (LTSVectorMessage *) &(out_msg.payload);
-  ltsm->sender = me; 
-  ltsm->flag = LTS_RECONCILE;
-  for (i = 0; i < MAX_SERVERS; i++) {
-    ltsm->lts[i] = my_vector[i]; 
-  }
-
-  /* 1c. Handle my own vector since it wont be received */
+  /* 1b. Handle my own vector since it wont be received */
   expected_vectors[me]--;
-  logdb("Decremented myself: \n");
-  for (i=0; i < MAX_SERVERS; i++) {
-    logdb (" %d", expected_vectors[i]);
-  }
   
-  /* 1d. Process our MY_LTS_Vector as a received vector */
   for (i=0; i < MAX_SERVERS; i++) { 
     my_entry.ts = my_vector[i];
     my_entry.pid = me;
@@ -512,7 +499,8 @@ void Initialize_Reconcile_Data () {
     }
   }
     
-  /* 1e. SEND: MY_LTS_VECTOR  */
+  /* 1c. SEND: MY_LTS_VECTOR  */
+  prepareLTSMsg (&out_msg, me, my_vector, LTS_RECONCILE);
   send_message(mbox, all_server_group, &out_msg);
 }
 
@@ -637,6 +625,7 @@ void Handle_lts_vector() {
   
     /* Finished RECONCILE state */ 
     loginfo("[TRANSITION] Done with RECONCILE. Entering RUN state.\n");
+    idle = E_get_time();
     my_state = RUN;
   }
 }
@@ -645,8 +634,10 @@ void handle_server_update() {
   update         new_update;
   AppendMessage  *am;
   LikeMessage 	 *lm;
+  LTSVectorMessage     *ltsm;
   chat_entry     *ce;
   like_entry     *le;
+  int             i;
   
   logdb("Received '%c' Update from server\n", mess.tag);
 
@@ -666,6 +657,7 @@ void handle_server_update() {
       strcpy(ce->text, am->text);
 
       loginfo("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
+      apply_update(&new_update, TRUE, TRUE);
       break;  
       
     case LIKE_MSG:
@@ -682,14 +674,46 @@ void handle_server_update() {
       le->lts = lm->ref;
 
       loginfo("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
+      apply_update(&new_update, TRUE, TRUE);
       break;
+
+    case LTS_VECTOR:
+      ltsm = (LTSVectorMessage *) mess.payload;
+      
+      /*  Recv: Reconcile LTS Vector, should only process if in reconcile state */
+      if (my_state == RECONCILE && ltsm->flag == LTS_RECONCILE) {
+        Handle_lts_vector();
+      
+      }
+      /*  Recv: periodic LTS Vector, should only process if in run state */
+      else if (my_state == RUN && ltsm->flag == LTS_PERIODIC) {
+        
+        loginfo("Received periodic LTS Vector from %s\n", ltsm->sender);
+        
+        /* Check min LTS and trim unnecessary Updates from global state log */
+        
+        for (i=0; i<MAX_SERVERS; i++) {
+          if (ltsm->lts[i] < min_update[i]) {
+            min_update[i] = ltsm->lts[i];
+            update_ll_print(&updates);
+            update_ll_trim(&updates, min_update[i], i);
+            update_ll_print(&updates);
+          }
+        }
+
+      }
+      else {
+        /* Ignoring LTS messages which could skew reconcile logic */
+        loginfo("  Ignoring extraneous LTS Vector message \n");
+      }
+
 
     default:
       logerr("ERROR! Received a non-update from server\n");
       exit(1);
   }
 
-  apply_update(&new_update, TRUE, TRUE);
+  
 }
 
 /* Update the list of connected clients */

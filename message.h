@@ -80,5 +80,7 @@ void prepareLikeMsg (Message * m, char * user,
 /* Prepare a View Message for sending connected servers in network view  */
 void prepareViewMsg (Message * m, int svr[MAX_SERVERS]);
 
+/* Prepare a LTSVector Message for sending to servers */
+void prepareLTSMsg (Message *m, int from, int lts[MAX_SERVERS], int f);
 
 #endif
