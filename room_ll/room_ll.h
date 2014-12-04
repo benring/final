@@ -23,9 +23,6 @@ typedef struct room_info {
 	chat_ll			chats;
 } room_info;
 
-//	char						attendee_group[NAME_LEN];
-//	client_ll                               attendees;
-
 typedef struct room_ll_node {
   room_info data;
   struct room_ll_node* prev;

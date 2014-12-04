@@ -696,10 +696,6 @@ void clear_room ()  {
     leave_group(mbox, my_room_distrolist);
     my_room[0] = '\0';
     my_room_distrolist[0] = '\0';
-
-    // TODO:  Clear the Chat_Msg_List (need either a chat_ll_clear() 
-    //  function or we need to free the mem)
-
     chat_room = chat_ll_create();
     displayed_attendees = name_ll_create();
   state = CONN;
