@@ -44,7 +44,6 @@ static  int             min_update_vector[MAX_SERVERS];
 static  client_ll       connected_clients;
 static  int             num_connected_clients = 0;
 
-
 /* Message handling vars */
 static	char			  User[80];
 static  char    		Private_group[MAX_GROUP_NAME];
@@ -60,6 +59,10 @@ static  char				    my_inbox[MAX_GROUP_NAME];
 static	char				    all_server_group[MAX_GROUP_NAME];   
 /* Spread group for all connected clients to track membership */
 static	char				    my_client_group[MAX_GROUP_NAME];    
+
+/* Flow Control */
+static  int             flow_control;
+static  update_ll       resend_queue;
 
 /* Other in/output vars */
 static	update				       *out_update;
@@ -109,7 +112,7 @@ void    apply_lts_vector (int svr, unsigned int lts[MAX_SERVERS]);
 
 /*  Functions to manage reconciling & recovery for fault tolerance */
 int     recover_from_disk(update_ll *list);
-void    resend_update (update *u);
+void    send_single_update (update *u);
 void    Initialize_Reconcile_Data();
 void    Handle_lts_vector();
 void    Determine_updates_to_send();
@@ -177,6 +180,7 @@ int main (int argc, char *argv[])  {
   /* Initiate Spread system event handling loop */
   E_init();
   E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY );
+  E_attach_fd(mbox, WRITE_FD, Resend_updates, 0, NULL, LOW_PRIORITY );
   E_attach_fd(mbox, EXCEPT_FD, Except, 0, NULL, HIGH_PRIORITY );
   E_handle_events();
 
@@ -221,6 +225,7 @@ void	Read_message()   {
   logdb("--------------------------------------------------------\n");
   if (strcmp(sender, Private_group) == 0) {
     logdb("Received from me:  %s. IGNORING \n", Private_group);
+    flow_control--;
     return;
   }
   else { 
@@ -234,7 +239,6 @@ void	Read_message()   {
       name = strtok(sender, HASHTAG);
       if (strcmp(name, my_inbox) != 0) {
         logdb("  Server Update message. Contents -->: %s\n", (char *) &mess);
-        
         handle_server_update();
       }
     } 
@@ -248,6 +252,7 @@ void	Read_message()   {
     if (E_compare_time(now, idle) >= 0) {
         prepareLTSMsg (&out_msg, me, my_vector, LTS_PERIODIC);
         send_message(mbox, all_server_group, &out_msg);
+        flow_control++;
         idle = E_get_time();
     }
   }
@@ -330,6 +335,8 @@ void Initialize (char * server_index) {
   updates = update_ll_create();
   connected_clients = client_ll_create();
   lts = 0;
+  flow_control = 0;
+  resend_queue = update_ll_create();
   
   periodic_delay.sec = 4;
   periodic_delay.usec = 0;
@@ -351,6 +358,18 @@ void Except()  {
 
 
 /*------------------------------------------------------------------------------
+ *   Except -- event handler for respond to Spread exceptions
+ *----------------------------------------------------------------------------*/
+void Resend_updates()  {
+  update u;
+  
+  if (flow_control < HOLD_SEND_FLOW && !update_ll_is_empty(&resend_queue))  {
+    u = update_ll_pop(&resend_updates);
+    send_single_update(&u);
+  }
+}
+
+/*------------------------------------------------------------------------------
  *   Chat Application event handling functions. These functions are invoked 
  *        in response to actions for chat operations, to include a client
  *        command, server's update message, or a membership change (server or
@@ -365,12 +384,6 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
   logdb("Client Request:  %c\n", mess.tag);
 	
   switch (mess.tag) {
-    case VIEW_MSG :
-      /* Send the connected_servers to the client */
-      prepareViewMsg(&out_msg, connected_svr);
-      send_message(mbox, client, &out_msg);
-      loginfo("VIEW Request. Sending list of servers to client <%s>\n", client);
-      break;
 		
     case JOIN_MSG :
       /* Create and Apply an Update. Send it out to serevers. Then send history to client */
@@ -388,6 +401,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       apply_update(out_update, TRUE, TRUE);
       prepareAppendMsg(&out_msg, am->room, am->user, am->text, out_update->lts);
       send_message(mbox, all_server_group, &out_msg);
+      flow_control++;
       break;
 
     case LIKE_MSG: 
@@ -400,6 +414,7 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
       apply_update(out_update, TRUE, TRUE);
       prepareLikeMsg(&out_msg, lm->user, lm->ref, lm->action, out_update->lts);
       send_message(mbox, all_server_group, &out_msg);
+      flow_control++;
       break;
 
     default:
@@ -507,6 +522,7 @@ void Initialize_Reconcile_Data () {
   /* 1c. SEND: MY_LTS_VECTOR  */
   prepareLTSMsg (&out_msg, me, my_vector, LTS_RECONCILE);
   send_message(mbox, all_server_group, &out_msg);
+  flow_control++;
 }
 
 void Determine_updates_to_send() {
@@ -549,14 +565,15 @@ void Determine_updates_to_send() {
 }
 
 void Send_updates() {
-  // TODO flow control?
   update_ll_node    *curr_update;
-
   int currpid;
   int currts;
 
   curr_update = updates.first;
 
+  /* Iterate through update log & append updates to resend_queue for all
+   *  updates for which this server is responsible for sending (beyond
+   *  the min_lts for that pid */
   while(curr_update) {
     currpid = curr_update->data.lts.pid;
     currts = curr_update->data.lts.ts;
@@ -564,7 +581,8 @@ void Send_updates() {
     if (my_responsibility[currpid]) {
       if(currts <= max_lts_vector[currpid].ts && currts >= min_lts_vector[currpid].ts) {
         logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
-        resend_update(&(curr_update->data));
+//        send_single_update(&(curr_update->data));
+        update_ll_insert_inorder(&resend_updates, curr_update->data);
       }
     }
     curr_update = curr_update->next;
@@ -730,7 +748,6 @@ void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       //printf("Client %s has connected to the server! \n", members[i]);
       add_client(members[i]);
   
-      // TODO can we send one multicast to the client group?
       prepareViewMsg(&out_msg, connected_svr);
       send_message(mbox, members[i], &out_msg);
     }
@@ -1055,27 +1072,8 @@ int recover_from_disk(update_ll *list) {
   return num_in_log;
 }
 
-//void update_my_vector() {
-//  int i = 0;
-//  update_ll_node *curr;
-//  /* Reset vector */
-//  for(i = 0; i < MAX_SERVERS; i++) {
-//    my_vector[i] = 0;
-//  }
-//
-//  /* Compute vector from updates. This can be optimized */
-//  /* Best solution is to search from the back until we get 1 update from each server */
-//  curr = updates.first;
-//  while (curr) {
-//    my_vector[curr->data.lts.pid] = curr->data.lts.ts;
-//    min_update_matrix[me][curr->data.lts.pid] = curr->data.lts.ts;
-//    curr = curr->next;
-//  }
-//
-//  return;
-//}
 
-void resend_update (update *u) {
+void send_single_update (update *u) {
   Message out_msg;
   chat_entry  *ce;
   like_entry  *le;
@@ -1103,6 +1101,7 @@ void resend_update (update *u) {
     }
     /* Send update to all servers  */
     send_message(mbox, all_server_group, &out_msg);
+    flow_control++;
 
 }
 
