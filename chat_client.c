@@ -100,7 +100,7 @@ void Display(int code) {
     Print_menu();
   }
   else {
-    system("clear");
+//    system("clear");
     loginfo("\n=================================================================================================\n");
     if (state == RUN) {
       loginfo("ROOM:  %s\n", my_room);
@@ -190,7 +190,7 @@ void process_server_message() {
       le->lts.ts = lm->lts.ts;
       le->action = lm->action;
 
-      logdb("  New like from server: User '%s' requested '%c' on LTS (%d,%d), occurring at LTS (%d, %d)\n", le->user, le->action, lm->ref.ts, lm->ref.pid, le->lts.ts, le->lts.pid);
+      logdb("  New like from server: User '%s' in room '%s' requested '%c' on LTS (%d,%d), occurring at LTS (%d, %d)\n", le->user, le->room, le->action, lm->ref.ts, lm->ref.pid, le->lts.ts, le->lts.pid);
       
       /* Get the referenced chat from the room & update its like list */
       ch = chat_ll_get_inorder(&chat_room, lm->ref);
@@ -540,7 +540,7 @@ void Read_message() {
 
     ch = chat_ll_get(&chat_room, ref);
     
-    logdb("User %s is trying to like a message from user %s\n",&User[3],  &(ch->chat.user[3]));
+    logdb("User %s is trying to like a message from user %s in room '%s'\n",&User[3],  &(ch->chat.user[3]), my_room);
     if (strcmp(&(ch->chat.user[3]), &User[3]) == 0) {
       dmesg = sprintf(last_message, "You cannot like your own chat.");
       break;

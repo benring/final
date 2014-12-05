@@ -100,7 +100,7 @@ void    handle_client_change(int num_members,
 
 /*  Functions to create updates fom data */
 void 		build_chatEntry (char * u, char * r, char * t);
-void 		build_likeEntry (char * u, lts_entry e, char a);
+void 		build_likeEntry (char * u, char * r, lts_entry e, char a);
 int     log_update(update *u);
 
 /*  Functions to build global state from updates*/
@@ -411,10 +411,10 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
     case LIKE_MSG: 
       /* Create and Apply an Update. Send it out to Servers */
       lm = (LikeMessage *) mess.payload;
-      loginfo("LIKE Request from user: <%s> on client: <%s>. ", lm->user, client);
+      loginfo("LIKE Request from user: <%s> on client '%s' in room: <%s>. ", lm->user, client, lm->room);
       loginfo("Action is '%c' for LTS: %d,%d\n", lm->action, lm->ref.ts, lm->ref.pid);
       
-      build_likeEntry(lm->user, lm->ref, lm->action);
+      build_likeEntry(lm->user, lm->room, lm->ref, lm->action);
       apply_update(out_update, TRUE, TRUE);
       prepareLikeMsg(&out_msg, lm->user, lm->room, lm->ref, lm->action, out_update->lts);
       send_message(mbox, all_server_group, &out_msg);
@@ -432,30 +432,16 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   Message out_msg;
 
   /* Re-compute the connected server list */
-  int new_connected_svr[MAX_SERVERS];
   int i;
-  int new_members = FALSE;
-  for (i=0; i<MAX_SERVERS; i++) {
-    new_connected_svr[i] = FALSE;
-  }
 
+  for (i=0; i<MAX_SERVERS; i++) {
+    connected_svr[i] = FALSE;
+  }
+  
   /* Detect current members */
   for (i=0; i<num_members; i++) {
     int server_num = get_server_num(members[i]);
-    new_connected_svr[server_num] = TRUE;
-  }
-
-  /* Compare to previous members */
-  for (i=0; i<MAX_SERVERS; i++) {
-    int diff = new_connected_svr[i] - connected_svr[i];
-    if (diff != 0) {
-      /* Update */
-      connected_svr[i] = new_connected_svr[i];
-
-      if (diff == 1) {
-        new_members = TRUE;
-      }
-    }
+    connected_svr[server_num] = TRUE;
   }
 
   loginfo("Server membership has changed. Current members:\n")
@@ -478,7 +464,8 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     }
 
   }
-  if (new_members && sum > 1) {
+//  if (new_members && sum > 1) {
+  if (sum > 1) {
     my_state = RECONCILE;
     loginfo("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
 //    update_my_vector();
@@ -777,13 +764,14 @@ void build_chatEntry (char * u, char * r, char * t) {
 	strcpy(ce->text, t);
 }
 
-void build_likeEntry (char * u, lts_entry ref, char a) {
+void build_likeEntry (char * u, char * r, lts_entry ref, char a) {
 	like_entry *le;
 	out_update->tag = LIKE;
 	out_update->lts.ts = ++lts;
 	
 	le = (like_entry *) &(out_update->entry);
 	strcpy(le->user, u);
+	strcpy(le->room, r);
 	le->lts.ts = ref.ts;
 	le->lts.pid = ref.pid;
 	le->action = a;
@@ -813,17 +801,30 @@ int log_update(update *u) {
  *      into the current state.
  *----------------------------------------------------------------------------*/
 int apply_update (update * u, int shouldLog, int send_clients) {
+  
+  int result;
 	
   /* Update LTS if its higher than our current one  */
   if (u->lts.ts > lts)  {
     lts = u->lts.ts;
   }
 
+  
+  if (u->lts.ts <= my_vector[u->lts.pid]) {
+    logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
+    return DUPLICATE_UPDATE;
+  }
   /* Do not process any duplicate updates EVER */
   if (update_ll_get_inorder_fromback(&updates, u->lts)) {
     logdb("DUPLICATE update: (%d, %d). Will not apply\n", u->lts.ts, u->lts.pid);
     return DUPLICATE_UPDATE;
   }
+
+  if (shouldLog) {
+    log_update(u);
+    logdb("LOGGING update: (%d, %d).\n", u->lts.ts, u->lts.pid);
+  }
+
   
   /* Update my_lts_vector for each new message received  for the corresponding server */
   if (u->lts.ts > my_vector[u->lts.pid]) {
@@ -831,30 +832,31 @@ int apply_update (update * u, int shouldLog, int send_clients) {
     min_update_matrix[me][u->lts.pid] = u->lts.ts;
   }
   
-  if (shouldLog) {
-    log_update(u);
-    logdb("LOGGING update: (%d, %d).\n", u->lts.ts, u->lts.pid);
-  }
-
   /* Insert into the list of updates */
   update_ll_insert_inorder_fromback(&updates, *u);
 
   /* Incorporate into state */
-  int result;
   result = incorporate_into_state(u, send_clients);
 
-  /* Upon success, try to apply pending updates */
-  if (result == SUCCESSFUL_UPDATE) {
-    try_pending_updates();
-  }
-  /* Or, Stash update as PENDING, if necessary */
-  else if (result == PENDING_UPDATE) {
-    logdb("Inserting update into PENDING\n");
-    update_ll_insert_inorder_fromback(pending_updates, *u);
-  } 
-  else {
-    logerr("ERROR: unhandled update!");
-    exit(1);
+  switch (result) {
+    /* Upon success, try to apply pending updates */
+    case SUCCESSFUL_UPDATE:
+      try_pending_updates();
+      break;
+
+    /* Stash update as PENDING, if necessary */
+    case PENDING_UPDATE:  
+      logdb("Inserting update into PENDING\n");
+      update_ll_insert_inorder_fromback(pending_updates, *u);
+      break;
+  
+    case DUPLICATE_UPDATE: 
+      logdb("Duplicate update is ignored\n");
+      break;
+
+    default:
+      logerr("ERROR: unhandled update!");
+      exit(1);
   }
 
   return result;
@@ -937,6 +939,10 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char * room
   chat_info   *ch;
   like_ll     *like_list;
   
+  
+  /* First try to create the room (if it's new) 
+   *   --> if it is, the chat won't exist, so like will post as a pending update */
+  create_room(room);
 
   /* Get the room associated with the chat being liked */
   rm = room_ll_get(&rooms, room);
@@ -952,6 +958,7 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char * room
     return UNHANDLED_UPDATE; 
   }
 
+
   /* Grab the chat_info and update its like list */
   ch = chat_ll_get_inorder_fromback(chat_list, ref);
   if (!ch) {
@@ -960,12 +967,18 @@ int apply_like_update(lts_entry ref, lts_entry like_lts, char* user, char * room
   }
   
   like_list = &(ch->likes);
+
+  if (like_ll_get_inorder(like_list, like_lts)) {
+    loginfo("DUPLICATE Like entry. Not applying.\n");
+    return DUPLICATE_UPDATE;
+  }
+ 
   like_ll_update_like(like_list, user, room, like_lts, action);
   
   /* Send a message to the distro group for this room */ 
   if (send_clients)  {
     prepareLikeMsg(&out_msg, user, room, ref, action, like_lts);
-    send_message(mbox, rm->distro_group,&out_msg);
+    send_message(mbox, rm->distro_group, &out_msg);
   }
   return SUCCESSFUL_UPDATE;
 }
@@ -1099,7 +1112,9 @@ void send_single_update (update *u) {
       return;
     }
     /* Send update to all servers  */
+    loginfo("WAITING to RESEND UPDATE....");
     send_message(mbox, all_server_group, &out_msg);
+    loginfo("RESENT!\n");
     flow_control++;
 
 }

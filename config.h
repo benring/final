@@ -39,7 +39,7 @@
 #define SHOW_HELP 1
 #define NO_REFRESH -1
 
-//#define	DEBUG 1
+#define	DEBUG 1
 #ifdef  DEBUG
 #define logdb(args...) printf(args);
 #else
