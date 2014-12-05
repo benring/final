@@ -6,7 +6,7 @@
  * Description:  Common static values used in the chat service
  *
  *****************************************************************************/
- #ifndef CONFIG_H
+#ifndef CONFIG_H
 #define CONFIG_H
 
 #include "sp.h"
@@ -35,11 +35,11 @@
 #define REM_LIKE 'R'
 
 /* Interface (for display) */
-#define SHOW_UI 0
 #define SHOW_HELP 1
+#define SHOW_UI 0
 #define NO_REFRESH -1
 
-#define	DEBUG 1
+/*  #define	DEBUG 1  */
 #ifdef  DEBUG
 #define logdb(args...) printf(args);
 #else

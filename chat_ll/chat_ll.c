@@ -60,7 +60,7 @@ void chat_ll_print_num(chat_ll* list, int num) {
     chat_ll_node* curr = list->first;
     while (curr) {
       if (index++ >= display_min) {
-        printf("%3d. [%-10s]: %-80s", index, &(curr->data.chat.user[3]), curr->data.chat.text);
+        printf("%3d. [%-10s]: %-70s ", index, &(curr->data.chat.user[3]), curr->data.chat.text);
         count = like_ll_count_likes(&curr->data.likes);
 
         if (count > 0) {

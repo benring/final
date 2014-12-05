@@ -53,13 +53,10 @@ static  Message			mess;
 
 /* Spread & server name vars   */
 static 	unsigned int		me;               /* Indexed from 0 */
-static  char    		    my_server_id;     /* Displayed index name (1-5) */
-/* Spread group to which ONLY this server joins so clients can send messages */
-static  char				    my_inbox[MAX_GROUP_NAME];         
-/* Spread group for all servers */
-static	char				    all_server_group[MAX_GROUP_NAME];   
-/* Spread group for all connected clients to track membership */
-static	char				    my_client_group[MAX_GROUP_NAME];    
+static  char  my_server_id;               /* Displayed index name (1-5) */
+static  char  my_inbox[MAX_GROUP_NAME];     /* For receiving client messages */        
+static	char	all_server_group[MAX_GROUP_NAME];   /* For servers only */
+static	char	my_client_group[MAX_GROUP_NAME];    /* For memebership  */
 
 /* Flow Control */
 static  int             flow_control;
@@ -88,7 +85,6 @@ static  lts_entry            max_lts_vector[MAX_SERVERS];
 void		Read_message();
 void    Except();
 void 		Initialize (char * server_index);
-void    Resend_updates();
 
 /*  High level event handlers in response to client/server action */
 void    handle_server_update();
@@ -114,11 +110,12 @@ void    apply_lts_vector (int svr, unsigned int lts[MAX_SERVERS]);
 
 /*  Functions to manage reconciling & recovery for fault tolerance */
 int     recover_from_disk(update_ll *list);
-void    send_single_update (update *u);
+void    queue_single_update (update *u);
 void    Initialize_Reconcile_Data();
 void    Handle_lts_vector();
 void    Determine_updates_to_send();
-void    Send_updates();
+void    Queue_updates();
+void    Resend_updates();
 
 
 /*  Other functions for server operations */
@@ -184,6 +181,7 @@ int main (int argc, char *argv[])  {
   E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY );
   E_attach_fd(mbox, WRITE_FD, Resend_updates, 0, NULL, LOW_PRIORITY );
   E_attach_fd(mbox, EXCEPT_FD, Except, 0, NULL, HIGH_PRIORITY );
+  E_deactivate_fd(mbox, WRITE_FD);
   E_handle_events();
 
   fclose(logfile);
@@ -367,9 +365,16 @@ void Except()  {
 void Resend_updates()  {
   update u;
   
+  /*  Send more updates for reconciling, if buffer is not too full and there
+   *    are messages to send  */
   if (flow_control < HOLD_SEND_FLOW && !update_ll_is_empty(&resend_queue))  {
     u = update_ll_pop(&resend_queue);
-    send_single_update(&u);
+    queue_single_update(&u);
+  }
+  
+  /* Deactivate the FD if there are no more messages to send */
+  if (update_ll_is_empty(&resend_queue)) {
+    E_deactivate_fd(mbox, WRITE_FD);
   }
 }
 
@@ -428,6 +433,111 @@ void handle_client_command(char client[MAX_GROUP_NAME]) {
   return;
 }
 
+/* Update the list of connected clients */
+void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
+  int i;
+  Message out_msg;
+  /* Check for removals */
+  client_ll_node *curr = connected_clients.first;
+  while (curr) {
+    if (!is_client_in_list(curr->data.name, num_members, members)) {
+      //printf("Client %s has disconnected from the server! \n", curr->data.name);
+      remove_client(curr->data.name);
+    }
+    curr = curr->next;
+  }
+
+  /* Check for additions */
+  for(i=0; i< num_members; i++) {
+    if(!client_ll_get(&connected_clients, members[i])) {
+      //printf("Client %s has connected to the server! \n", members[i]);
+      add_client(members[i]);
+  
+      prepareViewMsg(&out_msg, connected_svr);
+      send_message(mbox, members[i], &out_msg);
+    }
+  }
+
+  loginfo("Membership change in clients. New List: \n");
+  print_connected_clients();
+}
+
+void handle_server_update() {
+  update         new_update;
+  AppendMessage  *am;
+  LikeMessage 	 *lm;
+  LTSVectorMessage     *ltsm;
+  chat_entry     *ce;
+  like_entry     *le;
+  
+  logdb("Received '%c' Update from server\n", mess.tag);
+
+  switch (mess.tag) {
+    case APPEND_MSG:
+      /* Build and apply the update */
+      am = (AppendMessage *) mess.payload;
+
+      /*  Create a new data log entry */
+      new_update.tag = CHAT;
+      new_update.lts.pid = am->lts.pid;
+      new_update.lts.ts = am->lts.ts;
+      
+      ce = (chat_entry *) &(new_update.entry);
+      strcpy(ce->user, am->user);
+      strcpy(ce->room, am->room);
+      strcpy(ce->text, am->text);
+
+      loginfo("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
+
+      
+      apply_update(&new_update, TRUE, TRUE);
+      break;  
+      
+    case LIKE_MSG:
+      lm = (LikeMessage *) mess.payload;
+      
+      /*  Create a new data log entry */
+      new_update.tag = LIKE;
+      new_update.lts.pid = lm->lts.pid;
+      new_update.lts.ts = lm->lts.ts;
+
+      le = (like_entry *) &(new_update.entry);
+      strcpy(le->user, lm->user);
+      strcpy(le->room, lm->room);
+      le->action = lm->action;
+      le->lts = lm->ref;
+
+      loginfo("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
+      apply_update(&new_update, TRUE, TRUE);
+      break;
+
+    case LTS_VECTOR:
+      ltsm = (LTSVectorMessage *) mess.payload;
+      
+      /*  Recv: Reconcile LTS Vector, should only process if in reconcile state */
+      if (my_state == RECONCILE && ltsm->flag == LTS_RECONCILE) {
+        Handle_lts_vector();
+      }
+      /*  Recv: periodic LTS Vector, should only process if in run state */
+      else if (my_state == RUN && ltsm->flag == LTS_PERIODIC) {
+        loginfo("Received periodic LTS Vector from %d:  ", ltsm->sender);
+        print_lts_vector(ltsm->lts);
+        apply_lts_vector(ltsm->sender, ltsm->lts);
+      }
+      else {
+        /* Ignoring LTS messages which could skew reconcile logic */
+        loginfo("  Ignoring extraneous LTS Vector message \n");
+      }
+      break;
+
+    default:
+      logerr("ERROR! Received a non-update from server\n");
+      exit(1);
+  }
+
+  
+}
+
 void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
   Message out_msg;
 
@@ -444,6 +554,8 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
     connected_svr[server_num] = TRUE;
   }
 
+
+
   loginfo("Server membership has changed. Current members:\n")
   print_connected_servers();
 
@@ -452,7 +564,7 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
   send_message(mbox, my_client_group, &out_msg);
   logdb("Sending updated list of servers to all clients\n");
 
-  // Determine if we need to reconcile. (New members have joined. And more than 1 server)
+  /*  Determine if we need to reconcile  */
   int sum = 0;
   for (i = 0; i < MAX_SERVERS; i++) {
     if (connected_svr[i]) {
@@ -462,16 +574,13 @@ void handle_server_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_N
       /* Always reset expected vectors to 0 for non-connected servers  */
       expected_vectors[i] = 0;
     }
-
   }
-//  if (new_members && sum > 1) {
+  
+  /*  Only reconcile if there are other servers in the partition with us */
   if (sum > 1) {
     my_state = RECONCILE;
     loginfo("[TRANSITION] Entering RECONCILE state. Sending out my vector and waiting for others. \n");
-//    update_my_vector();
-
     Initialize_Reconcile_Data();
-
   }
 }
 
@@ -555,7 +664,7 @@ void Determine_updates_to_send() {
   
 }
 
-void Send_updates() {
+void Queue_updates() {
   update_ll_node    *curr_update;
   int currpid;
   int currts;
@@ -572,14 +681,16 @@ void Send_updates() {
     if (my_responsibility[currpid]) {
       if(currts <= max_lts_vector[currpid].ts && currts >= min_lts_vector[currpid].ts) {
         logdb("Sending missing update (%d, %d)\n", curr_update->data.lts.ts, curr_update->data.lts.pid); 
-//        send_single_update(&(curr_update->data));
         update_ll_insert_inorder(&resend_queue, curr_update->data);
       }
     }
     curr_update = curr_update->next;
   }
   
-
+  /* Activate the FD if there are messages to send */
+  if (!update_ll_is_empty(&resend_queue)) {
+    E_activate_fd(mbox, WRITE_FD);
+  }
 }
 
 void Handle_lts_vector() {
@@ -634,119 +745,13 @@ void Handle_lts_vector() {
     Determine_updates_to_send();
   
     /*  4. Attempt to send updates & return to RUN state */
-    // DO FLOW CONTROL HERE
-    Send_updates();
+    Queue_updates();
   
     /* Finished RECONCILE state */ 
     loginfo("[TRANSITION] Done with RECONCILE. Entering RUN state.\n");
     idle = E_get_time();
     my_state = RUN;
   }
-}
-
-void handle_server_update() {
-  update         new_update;
-  AppendMessage  *am;
-  LikeMessage 	 *lm;
-  LTSVectorMessage     *ltsm;
-  chat_entry     *ce;
-  like_entry     *le;
-  
-  logdb("Received '%c' Update from server\n", mess.tag);
-
-  switch (mess.tag) {
-    case APPEND_MSG:
-      /* Build and apply the update */
-      am = (AppendMessage *) mess.payload;
-
-      /*  Create a new data log entry */
-      new_update.tag = CHAT;
-      new_update.lts.pid = am->lts.pid;
-      new_update.lts.ts = am->lts.ts;
-      
-      ce = (chat_entry *) &(new_update.entry);
-      strcpy(ce->user, am->user);
-      strcpy(ce->room, am->room);
-      strcpy(ce->text, am->text);
-
-      loginfo("  New chat on room <%s> from server-group, LTS (%d,%d)\n", ce->room, new_update.lts.ts, new_update.lts.pid);
-
-      
-      apply_update(&new_update, TRUE, TRUE);
-      break;  
-      
-    case LIKE_MSG:
-      lm = (LikeMessage *) mess.payload;
-      
-      /*  Create a new data log entry */
-      new_update.tag = LIKE;
-      new_update.lts.pid = lm->lts.pid;
-      new_update.lts.ts = lm->lts.ts;
-
-      le = (like_entry *) &(new_update.entry);
-      strcpy(le->user, lm->user);
-      strcpy(le->room, lm->room);
-      le->action = lm->action;
-      le->lts = lm->ref;
-
-      loginfo("  New like from server-group: User '%s' requests '%c' on LTS (%d,%d)\n", le->user, le->action, le->lts.ts, le->lts.pid);
-      apply_update(&new_update, TRUE, TRUE);
-      break;
-
-    case LTS_VECTOR:
-      ltsm = (LTSVectorMessage *) mess.payload;
-      
-      /*  Recv: Reconcile LTS Vector, should only process if in reconcile state */
-      if (my_state == RECONCILE && ltsm->flag == LTS_RECONCILE) {
-        Handle_lts_vector();
-      }
-      /*  Recv: periodic LTS Vector, should only process if in run state */
-      else if (my_state == RUN && ltsm->flag == LTS_PERIODIC) {
-        loginfo("Received periodic LTS Vector from %d:  ", ltsm->sender);
-        print_lts_vector(ltsm->lts);
-        apply_lts_vector(ltsm->sender, ltsm->lts);
-      }
-      else {
-        /* Ignoring LTS messages which could skew reconcile logic */
-        loginfo("  Ignoring extraneous LTS Vector message \n");
-      }
-      break;
-
-    default:
-      logerr("ERROR! Received a non-update from server\n");
-      exit(1);
-  }
-
-  
-}
-
-/* Update the list of connected clients */
-void handle_client_change(int num_members, char members[MAX_CLIENTS][MAX_GROUP_NAME]) {
-  int i;
-  Message out_msg;
-  /* Check for removals */
-  client_ll_node *curr = connected_clients.first;
-  while (curr) {
-    if (!is_client_in_list(curr->data.name, num_members, members)) {
-      //printf("Client %s has disconnected from the server! \n", curr->data.name);
-      remove_client(curr->data.name);
-    }
-    curr = curr->next;
-  }
-
-  /* Check for additions */
-  for(i=0; i< num_members; i++) {
-    if(!client_ll_get(&connected_clients, members[i])) {
-      //printf("Client %s has connected to the server! \n", members[i]);
-      add_client(members[i]);
-  
-      prepareViewMsg(&out_msg, connected_svr);
-      send_message(mbox, members[i], &out_msg);
-    }
-  }
-
-  loginfo("Membership change in clients. New List: \n");
-  print_connected_clients();
 }
 
 
@@ -1031,7 +1036,10 @@ void try_pending_updates() {
   pending_updates = newpending;
 }
 
-
+/*  apply_lts_vector -- used to process preriodic LTS Vector messages and
+ *      trim global log entry data structure of update messages which 
+ *      are no longer needed in memory (because all other servers have
+ *      confirmed they have the older updates)  */
 void apply_lts_vector (int svr, unsigned int lts[MAX_SERVERS]) {
   int             i, j;
   unsigned int    curmin;
@@ -1085,7 +1093,7 @@ int recover_from_disk(update_ll *list) {
 }
 
 
-void send_single_update (update *u) {
+void queue_single_update (update *u) {
   Message out_msg;
   chat_entry  *ce;
   like_entry  *le;
@@ -1094,14 +1102,14 @@ void send_single_update (update *u) {
 		
     case CHAT:
       ce = (chat_entry *) &(u->entry);
-      logdb("Resending chat append msg: '%s' said \"%s\" in room <%s>\n", 
+      loginfo("  Resending chat append msg: '%s' said \"%s\" in room <%s>\n", 
         ce->user, ce->text, ce->room);
       prepareAppendMsg(&out_msg, ce->room, ce->user, ce->text, u->lts);
       break;
 			
     case LIKE:
       le = (like_entry *) &(u->entry);
-      logdb("Resending like msg: '%s'  did a %c-LIKE on chat-LTS (%d, %d)\n", 
+      loginfo("  Resending like msg: '%s'  did a %c-LIKE on chat-LTS (%d, %d)\n", 
         le->user, le->action, le->lts.ts, le->lts.pid);
       prepareLikeMsg(&out_msg, le->user, le->room, le->lts, le->action, u->lts);
       
@@ -1112,9 +1120,7 @@ void send_single_update (update *u) {
       return;
     }
     /* Send update to all servers  */
-    loginfo("WAITING to RESEND UPDATE....");
     send_message(mbox, all_server_group, &out_msg);
-    loginfo("RESENT!\n");
     flow_control++;
 
 }
