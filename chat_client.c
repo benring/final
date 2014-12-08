@@ -82,6 +82,7 @@ int main (int argc, char *argv[])  {
 	E_attach_fd(0, READ_FD, User_command, 0, NULL, HIGH_PRIORITY );
   E_attach_fd(mbox, READ_FD, Read_message, 0, NULL, LOW_PRIORITY );
 	E_handle_events();
+	free(out_msg);
 
 	return(0);
 }
@@ -138,8 +139,9 @@ void process_server_message() {
   AppendMessage 	*am;
 	LikeMessage 		*lm;
   ViewMessage     *vm;
-  like_entry      *le;
-  chat_info       *ch;
+  like_entry      le;
+  chat_info       ch;
+  chat_info       *chat;
   int             i;
 	
 	logdb("Received '%c' Update from server\n", in_msg.tag);
@@ -156,19 +158,18 @@ void process_server_message() {
       }
       
       /*  Create a new chat entry */
-      ch = malloc(sizeof(chat_info));
-      ch->lts.pid = am->lts.pid;
-      ch->lts.ts = am->lts.ts;
-      ch->likes = like_ll_create();
-      strcpy(ch->chat.user, am->user);
-      strcpy(ch->chat.room, am->room);
-      strcpy(ch->chat.text, am->text);
+      ch.lts.pid = am->lts.pid;
+      ch.lts.ts = am->lts.ts;
+      ch.likes = like_ll_create();
+      strcpy(ch.chat.user, am->user);
+      strcpy(ch.chat.room, am->room);
+      strcpy(ch.chat.text, am->text);
 
       logdb("  New chat from server: LTS (%d,%d), User '%s' said \"%s\"\n", 
-        ch->lts.ts, ch->lts.pid, ch->chat.user, ch->chat.text);
+        ch.lts.ts, ch.lts.pid, ch.chat.user, ch.chat.text);
       
       /* Append to global chat list  */
-      chat_ll_insert_inorder(&chat_room, *ch);
+      chat_ll_insert_inorder(&chat_room, ch);
       
       break;  
       
@@ -178,18 +179,17 @@ void process_server_message() {
       lm = (LikeMessage *) in_msg.payload;
 
       /*  Create a new like entry */
-      le = malloc(sizeof(like_entry));
-      strcpy(le->user, lm->user);
-      strcpy(le->room, lm->room);
-      le->lts.pid = lm->lts.pid;
-      le->lts.ts = lm->lts.ts;
-      le->action = lm->action;
+      strcpy(le.user, lm->user);
+      strcpy(le.room, lm->room);
+      le.lts.pid = lm->lts.pid;
+      le.lts.ts = lm->lts.ts;
+      le.action = lm->action;
 
-      logdb("  New like from server: User '%s' in room '%s' requested '%c' on LTS (%d,%d), occurring at LTS (%d, %d)\n", le->user, le->room, le->action, lm->ref.ts, lm->ref.pid, le->lts.ts, le->lts.pid);
+      logdb("  New like from server: User '%s' in room '%s' requested '%c' on LTS (%d,%d), occurring at LTS (%d, %d)\n", le.user, le.room, le.action, lm->ref.ts, lm->ref.pid, le.lts.ts, le.lts.pid);
       
       /* Get the referenced chat from the room & update its like list */
-      ch = chat_ll_get_inorder(&chat_room, lm->ref);
-      like_ll_update_like(&(ch->likes), le->user, le->room, le->lts, le->action); 
+      chat = chat_ll_get_inorder(&chat_room, lm->ref);
+      like_ll_update_like(&(chat->likes), le.user, le.room, le.lts, le.action); 
     
       break;
 

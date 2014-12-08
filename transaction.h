@@ -33,7 +33,7 @@ typedef struct chat_entry {
 
 typedef struct like_entry {
 	char 		    user[NAME_LEN];
-  char        room[NAME_LEN];
+        char        room[NAME_LEN];
 	lts_entry 	lts;
 	char 		    action;
 } like_entry;

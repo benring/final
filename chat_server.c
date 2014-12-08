@@ -187,7 +187,7 @@ int main (int argc, char *argv[])  {
   fclose(logfile);
   disconn_spread(mbox);
   free(pending_updates);
-
+  free(out_update);
   return(0);
 }
 
@@ -637,14 +637,15 @@ void Determine_updates_to_send() {
     my_entry.ts = my_vector[i];
    
     /* Server is always responsible for its own updates */
-    if (i == me && max_lts_vector[i].ts != 0) {
+    if (i == me && max_lts_vector[i].ts != 0 && max_lts_vector[i].ts > min_lts_vector[i].ts) {
       my_responsibility[i] = TRUE;
     }
 
     /* If a server is not connected, we may be responsible for its updates */
     /* Provided that maximum LTS matches my_entry */
     /* The pid guarantees only 1 server will resend */
-    if (max_lts_vector[i].ts != 0 && !connected_svr[i] && lts_eq(my_entry, max_lts_vector[i])) { 
+    if (max_lts_vector[i].ts != 0 && !connected_svr[i] 
+          && lts_eq(my_entry, max_lts_vector[i]) && max_lts_vector[i].ts > min_lts_vector[i].ts) { 
       my_responsibility[i] = TRUE;
     }
   }
